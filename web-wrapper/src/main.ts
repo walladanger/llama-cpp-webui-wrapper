@@ -12,6 +12,7 @@ const SERVER_PORT = Number(process.env.LLAMA_CPP_PORT ?? "8080");
 const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
 const SERVER_EXE_RELEASE = join(ROOT_DIR, "build", "bin", "Release", "llama-server.exe");
 const SERVER_EXE_DEFAULT = join(ROOT_DIR, "build", "bin", "llama-server.exe");
+const SERVER_EXE_PORTABLE = join(DATA_DIR, "bin", "llama-server.exe");
 const LOG_FILE = join(LOG_DIR, "llama-server.log");
 
 let serverProcess: ChildProcessWithoutNullStreams | undefined;
@@ -24,6 +25,10 @@ function ensurePortableFolders(): void {
 }
 
 function findServerExecutable(): string | undefined {
+  if (existsSync(SERVER_EXE_PORTABLE)) {
+    return SERVER_EXE_PORTABLE;
+  }
+
   if (existsSync(SERVER_EXE_RELEASE)) {
     return SERVER_EXE_RELEASE;
   }

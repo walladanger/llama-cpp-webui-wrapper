@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Wrapper = Join-Path $Root "web-wrapper"
 $DataDir = Join-Path $Root "portable-data"
+$BinDir = Join-Path $DataDir "bin"
 $LogDir = Join-Path $DataDir "logs"
 $ModelsDir = Join-Path $DataDir "models"
 $Desktop = [Environment]::GetFolderPath("Desktop")
@@ -30,7 +31,7 @@ function Invoke-Checked {
     }
 }
 
-New-Item -ItemType Directory -Force -Path $LogDir, $ModelsDir, (Join-Path $DataDir "config"), (Join-Path $DataDir "cache"), $NpmCache | Out-Null
+New-Item -ItemType Directory -Force -Path $BinDir, $LogDir, $ModelsDir, (Join-Path $DataDir "config"), (Join-Path $DataDir "cache"), $NpmCache | Out-Null
 
 Write-Host "Installing the desktop wrapper..."
 Invoke-Checked -FilePath "npm" -Arguments @("install", "--cache", $NpmCache) -WorkingDirectory $Wrapper
@@ -43,7 +44,38 @@ if ($CMake) {
     Invoke-Checked -FilePath "cmake" -Arguments @("--build", (Join-Path $Root "build"), "--config", "Release", "--target", "llama-server")
 }
 else {
-    Write-Warning "CMake was not found. Install CMake and Visual Studio Build Tools, then run this setup again to build llama-server."
+    Write-Warning "CMake was not found. Trying to install the official Windows llama-server release into portable-data\bin instead."
+    $ServerExe = Join-Path $BinDir "llama-server.exe"
+    if (-not (Test-Path $ServerExe)) {
+        $Releases = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20" -Headers @{ "User-Agent" = "llama-cpp-web-wrapper-setup" }
+        $Asset = $null
+        foreach ($Release in $Releases) {
+            $Asset = $Release.assets |
+                Where-Object { $_.name -match "llama-.*-bin-win-cpu-x64\.zip$" } |
+                Select-Object -First 1
+            if ($Asset) {
+                break
+            }
+        }
+
+        if (-not $Asset) {
+            throw "Could not find a CPU Windows x64 llama.cpp release asset."
+        }
+
+        $Archive = Join-Path $DataDir $Asset.name
+        $ExtractDir = Join-Path $DataDir "llama-release"
+        Write-Host "Downloading $($Asset.name)..."
+        Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $Archive -Headers @{ "User-Agent" = "llama-cpp-web-wrapper-setup" }
+        if (Test-Path $ExtractDir) {
+            Remove-Item -LiteralPath $ExtractDir -Recurse -Force
+        }
+        Expand-Archive -LiteralPath $Archive -DestinationPath $ExtractDir -Force
+        Copy-Item -Path (Join-Path $ExtractDir "*") -Destination $BinDir -Recurse -Force
+        $DownloadedServer = Get-ChildItem -Path $BinDir -Filter "llama-server.exe" -Recurse | Select-Object -First 1
+        if (-not $DownloadedServer) {
+            throw "Downloaded release did not contain llama-server.exe."
+        }
+    }
 }
 
 Write-Host "Creating desktop shortcut..."
