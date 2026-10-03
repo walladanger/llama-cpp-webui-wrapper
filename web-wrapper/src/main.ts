@@ -80,8 +80,9 @@ async function waitForServer(timeoutMs = 30000): Promise<boolean> {
         return true;
       }
     } catch {
-      await delay(750);
+      // server not reachable yet
     }
+    await delay(750);
   }
 
   return false;
