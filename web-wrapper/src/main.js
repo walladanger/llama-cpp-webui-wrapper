@@ -3,6 +3,7 @@ const { createWriteStream, existsSync, mkdirSync } = require("node:fs");
 const { join, resolve } = require("node:path");
 const { setTimeout: delay } = require("node:timers/promises");
 const { runCli } = require("./runtimes/cli.js");
+const { prepareLaunch } = require("./runtimes/launch.js");
 
 const ROOT_DIR = resolve(__dirname, "..", "..");
 const DATA_DIR = join(ROOT_DIR, "portable-data");
@@ -14,6 +15,7 @@ const SERVER_EXE_RELEASE = join(ROOT_DIR, "build", "bin", "Release", "llama-serv
 const SERVER_EXE_DEFAULT = join(ROOT_DIR, "build", "bin", "llama-server.exe");
 const SERVER_EXE_PORTABLE = join(DATA_DIR, "bin", "llama-server.exe");
 const LOG_FILE = join(LOG_DIR, "llama-server.log");
+const SETTINGS_FILE = join(DATA_DIR, "config", "llama-server.json");
 
 let serverProcess;
 let shellProcess;
@@ -40,7 +42,7 @@ function findServerExecutable() {
   return undefined;
 }
 
-function startServer() {
+async function startServer() {
   const executable = findServerExecutable();
 
   if (!executable) {
@@ -50,18 +52,21 @@ function startServer() {
   }
 
   const logStream = createWriteStream(LOG_FILE, { flags: "a" });
-  const args = ["--host", "127.0.0.1", "--port", String(SERVER_PORT), "--models-dir", MODELS_DIR];
+  const launch = await prepareLaunch({ executable, settingsFile: SETTINGS_FILE, port: SERVER_PORT, modelsDir: MODELS_DIR });
+  const args = launch.args;
 
   serverProcess = spawn(executable, args, {
     cwd: ROOT_DIR,
     env: {
       ...process.env,
+      ...launch.env,
       LLAMA_CACHE: join(DATA_DIR, "cache"),
     },
     windowsHide: true,
   });
 
   logStream.write(`\n\n[${new Date().toISOString()}] Starting ${executable} ${args.join(" ")}\n`);
+  for (const note of launch.notes) logStream.write(`${note}\n`);
   serverProcess.stdout.pipe(logStream, { end: false });
   serverProcess.stderr.pipe(logStream, { end: false });
   serverProcess.on("exit", (code, signal) => {
@@ -130,7 +135,7 @@ function shutdown() {
 
 async function main() {
   ensurePortableFolders();
-  startServer();
+  await startServer();
 
   const ready = await waitForServer();
   if (!ready) {
@@ -144,7 +149,12 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.on("exit", shutdown);
 
-runCli(process.argv.slice(2), SERVER_PORT)
+runCli(process.argv.slice(2), {
+  ownPort: SERVER_PORT,
+  executable: findServerExecutable(),
+  settingsFile: SETTINGS_FILE,
+  modelsDir: MODELS_DIR,
+})
   .then((handled) => (handled ? undefined : main()))
   .catch((error) => {
     ensurePortableFolders();
