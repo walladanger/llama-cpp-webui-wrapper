@@ -6,7 +6,10 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "scan": "node dist/main.js --scan",
+    "catalog": "node dist/main.js --catalog",
+    "sync-catalog": "node scripts/sync-catalog.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

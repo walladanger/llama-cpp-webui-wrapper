@@ -2,6 +2,7 @@ const { spawn } = require("node:child_process");
 const { createWriteStream, existsSync, mkdirSync } = require("node:fs");
 const { join, resolve } = require("node:path");
 const { setTimeout: delay } = require("node:timers/promises");
+const { runCli } = require("./runtimes/cli.js");
 
 const ROOT_DIR = resolve(__dirname, "..", "..");
 const DATA_DIR = join(ROOT_DIR, "portable-data");
@@ -143,11 +144,13 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.on("exit", shutdown);
 
-main().catch((error) => {
-  ensurePortableFolders();
-  const logStream = createWriteStream(join(LOG_DIR, "desktop-wrapper.log"), { flags: "a" });
-  logStream.end(`[${new Date().toISOString()}] ${error.stack ?? error.message}\n`);
-  console.error(error.message);
-  shutdown();
-  process.exit(1);
-});
+runCli(process.argv.slice(2), SERVER_PORT)
+  .then((handled) => (handled ? undefined : main()))
+  .catch((error) => {
+    ensurePortableFolders();
+    const logStream = createWriteStream(join(LOG_DIR, "desktop-wrapper.log"), { flags: "a" });
+    logStream.end(`[${new Date().toISOString()}] ${error.stack ?? error.message}\n`);
+    console.error(error.message);
+    shutdown();
+    process.exit(1);
+  });
