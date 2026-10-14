@@ -1,8 +1,11 @@
-// Command line for the runtime layer: `--scan` and `--catalog`. Returns false when argv asks for neither.
+// Command line for the runtime layer: `--scan`, `--catalog`, `--gpus`, `--settings`, `--init-settings`. Returns false when argv asks for none.
 "use strict";
 
 const { RUNTIMES, find } = require("./catalog.js");
 const { scan } = require("./probe.js");
+const { listDevices } = require("./gpu.js");
+const { prepareLaunch } = require("./launch.js");
+const settings = require("./server-settings.js");
 
 function valuesOf(argv, flag) {
   const values = [];
@@ -57,9 +60,45 @@ function printCatalog(argv) {
   console.log(`\n${list.length} of ${RUNTIMES.length} runtimes.`);
 }
 
-async function runCli(argv, ownPort) {
+async function printGpus(ctx) {
+  if (!ctx.executable) {
+    console.log("llama-server was not found, so graphics cards cannot be listed.");
+    return;
+  }
+  const devices = await listDevices(ctx.executable);
+  if (devices.length === 0) {
+    console.log("llama-server reported no devices.");
+    return;
+  }
+  const rows = [["DEVICE", "NAME", "TOTAL MiB", "FREE MiB"]];
+  for (const d of devices) rows.push([d.id, d.name, d.mem, d.free]);
+  console.log(table(rows));
+}
+
+async function printSettings(ctx) {
+  const launch = await prepareLaunch({ executable: ctx.executable, settingsFile: ctx.settingsFile, port: ctx.ownPort, modelsDir: ctx.modelsDir });
+  console.log(`Settings: ${ctx.settingsFile}`);
+  for (const note of launch.notes) console.log(note);
+  for (const [key, value] of Object.entries(launch.env)) console.log(`env ${key}=${value}`);
+  console.log(`${ctx.executable ?? "llama-server"} ${launch.args.join(" ")}`);
+}
+
+// ctx: { ownPort, executable, settingsFile, modelsDir }
+async function runCli(argv, ctx) {
+  if (argv.includes("--init-settings")) {
+    console.log(settings.writeDefaults(ctx.settingsFile) ? `Wrote ${ctx.settingsFile}` : `${ctx.settingsFile} already exists; left unchanged.`);
+    return true;
+  }
+  if (argv.includes("--settings")) {
+    await printSettings(ctx);
+    return true;
+  }
+  if (argv.includes("--gpus")) {
+    await printGpus(ctx);
+    return true;
+  }
   if (argv.includes("--scan")) {
-    await printScan(argv, ownPort);
+    await printScan(argv, ctx.ownPort);
     return true;
   }
   if (argv.includes("--catalog")) {
