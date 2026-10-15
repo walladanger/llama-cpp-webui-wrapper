@@ -263,6 +263,12 @@ mod tests {
     }
 
     #[test]
+    fn shipped_defaults_change_nothing() {
+        let shipped: Value = serde_json::from_str(include_str!("../llama-server.default.json")).unwrap();
+        assert_eq!(line(shipped), line(json!({})));
+    }
+
+    #[test]
     fn custom_values() {
         let got = line(json!({
             "fit": false, "ctx_size": 8192, "flash_attn": "on", "cache_type_k": "q8_0", "cache_type_v": "q8_0",

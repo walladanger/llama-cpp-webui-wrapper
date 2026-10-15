@@ -15,6 +15,8 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: tauri-shell
@@ -27,8 +29,33 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      - name: Package portable app
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./package-portable.ps1
+
       - uses: actions/upload-artifact@v6
         with:
-          name: llama-webui-windows-x64
-          path: tauri-shell/target/release/llama-webui.exe
+          name: Llama-WebUI-windows-x64-cuda
+          path: tauri-shell/dist/Llama-WebUI-windows-x64-cuda.zip
           if-no-files-found: error
+
+      # Rolling release on main so the zip has a permanent download link.
+      - name: Publish release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "webui-latest"
+          $llama = (Get-Content dist/llama-cpp-tag.txt) -replace '^tag=', ''
+          $notes = "Portable llama.cpp WebUI for Windows x64 (NVIDIA CUDA). Built from ${{ github.sha }} with llama.cpp $llama. Extract, put .gguf files in portable-data\models, run llama-webui.exe."
+          gh release view $tag --repo ${{ github.repository }} *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo ${{ github.repository }} --title "llama.cpp WebUI (latest)" --notes $notes --target ${{ github.sha }} --latest
+          } else {
+            git push --force origin "HEAD:refs/tags/$tag"
+            gh release edit $tag --repo ${{ github.repository }} --notes $notes
+          }
+          gh release upload $tag dist/Llama-WebUI-windows-x64-cuda.zip --repo ${{ github.repository }} --clobber
