@@ -10,6 +10,8 @@ $Desktop = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $Desktop "llama.cpp WebUI.lnk"
 $RunScript = Join-Path $Root "Run-Llama-WebUI.ps1"
 $NpmCache = Join-Path $DataDir "npm-cache"
+$ShellDir = Join-Path $Root "tauri-shell"
+$ShellExe = Join-Path $Root "llama-webui.exe"
 
 function Invoke-Checked {
     param(
@@ -78,13 +80,30 @@ else {
     }
 }
 
+$Cargo = Get-Command cargo -ErrorAction SilentlyContinue
+if ($Cargo) {
+    Write-Host "Building the Tauri desktop shell..."
+    Invoke-Checked -FilePath "cargo" -Arguments @("build", "--release") -WorkingDirectory $ShellDir
+    Copy-Item -LiteralPath (Join-Path $ShellDir "target\release\llama-webui.exe") -Destination $ShellExe -Force
+}
+elseif (-not (Test-Path $ShellExe)) {
+    Write-Warning "Rust was not found, so the Tauri shell was not built. Put a built llama-webui.exe in $Root to use it."
+}
+
 Write-Host "Creating desktop shortcut..."
 $Shell = New-Object -ComObject WScript.Shell
 $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = "powershell.exe"
-$Shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$RunScript`""
+if (Test-Path $ShellExe) {
+    $Shortcut.TargetPath = $ShellExe
+    $Shortcut.Arguments = ""
+    $Shortcut.IconLocation = "$ShellExe,0"
+}
+else {
+    $Shortcut.TargetPath = "powershell.exe"
+    $Shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$RunScript`""
+    $Shortcut.IconLocation = "powershell.exe,0"
+}
 $Shortcut.WorkingDirectory = $Root
-$Shortcut.IconLocation = "powershell.exe,0"
 $Shortcut.Save()
 
 Write-Host ""
