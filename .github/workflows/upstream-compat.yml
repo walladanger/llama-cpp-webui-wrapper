@@ -41,10 +41,26 @@ jobs:
           Expand-Archive -LiteralPath cpu-server.zip -DestinationPath cpu-server
           $server = Get-ChildItem -LiteralPath cpu-server -Filter llama-server.exe -Recurse | Select-Object -First 1
           if (-not $server) { throw 'CPU release has no llama-server.exe' }
+          $bench = Get-ChildItem -LiteralPath cpu-server -Filter llama-bench.exe -Recurse | Select-Object -First 1
+          if (-not $bench) { throw 'CPU release has no llama-bench.exe' }
+          if (-not (Test-Path -LiteralPath (Join-Path $bench.DirectoryName 'llama-bench-impl.dll'))) { throw 'CPU release has no llama-bench-impl.dll' }
           & $server.FullName --version
           if ($LASTEXITCODE -ne 0) { throw 'Pinned CPU llama-server did not start' }
+          & $bench.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned CPU llama-bench did not start' }
 
       - name: Package pinned CUDA release
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: ./tauri-shell/package-portable.ps1
+
+      - name: Check portable engine tools
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $app = 'tauri-shell/dist/Llama-WebUI'
+          foreach ($path in @('llama-engine-manager.exe', 'portable-data/config/trtllm.json', 'portable-data/bin/llama-bench.exe', 'install-llama-bench.ps1')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $app $path))) { throw "Portable package is missing $path" }
+          }
+          & (Join-Path $app 'llama-engine-manager.exe') bench installed
+          if ($LASTEXITCODE -ne 0) { throw 'Portable llama-bench detection failed' }

@@ -52,6 +52,10 @@ Copy-Item -LiteralPath $ShellExe -Destination (Join-Path $App "llama-webui.exe")
 Copy-Item -LiteralPath $ManagerExe -Destination (Join-Path $App "llama-engine-manager.exe")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "llama-server.default.json") -Destination (Join-Path $App "portable-data\config\llama-server.json")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "vllm.default.json") -Destination (Join-Path $App "portable-data\config\vllm.json")
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "trtllm.default.json") -Destination (Join-Path $App "portable-data\config\trtllm.json")
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "install-llama-bench.ps1") -Destination (Join-Path $App "install-llama-bench.ps1")
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "llama-cpp-release.txt") -Destination (Join-Path $App "llama-cpp-release.txt")
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "cuda-version.txt") -Destination (Join-Path $App "cuda-version.txt")
 @"
 llama.cpp WebUI - portable
 
@@ -61,6 +65,8 @@ llama.cpp WebUI - portable
 Server settings (GPU placement, context, flash attention, ...): portable-data\config\llama-server.json
 Logs: portable-data\logs\llama-server.log
 Optional WSL2 vLLM manager: llama-engine-manager.exe vllm start|status|stop|logs
+Optional WSL2 TensorRT-LLM manager: llama-engine-manager.exe trtllm start|status|stop|logs
+Benchmark: llama-engine-manager.exe bench run PATH-TO-MODEL.gguf
 Configure portable-data\config\vllm.json first. vLLM and model weights are installed inside WSL2, not bundled.
 Bundled llama.cpp: $($Pick.Tag), CUDA $($Pick.Cuda). Needs an NVIDIA driver new enough for CUDA $($Pick.Cuda).
 "@ | Set-Content -Path (Join-Path $App "README.txt") -Encoding ascii

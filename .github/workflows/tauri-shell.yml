@@ -35,6 +35,13 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./package-portable.ps1
 
+      - name: Check optional engine files
+        shell: pwsh
+        run: |
+          foreach ($path in @('dist/Llama-WebUI/llama-engine-manager.exe', 'dist/Llama-WebUI/install-llama-bench.ps1', 'dist/Llama-WebUI/portable-data/config/trtllm.json', 'dist/Llama-WebUI/portable-data/bin/llama-bench.exe')) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Portable package is missing $path" }
+          }
+
       - uses: actions/upload-artifact@v6
         with:
           name: Llama-WebUI-windows-x64-cuda

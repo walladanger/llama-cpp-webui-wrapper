@@ -40,6 +40,10 @@ $VllmConfig = Join-Path $DataDir "config\vllm.json"
 if (-not (Test-Path $VllmConfig)) {
     Copy-Item -LiteralPath (Join-Path $ShellDir "vllm.default.json") -Destination $VllmConfig
 }
+$TrtllmConfig = Join-Path $DataDir "config\trtllm.json"
+if (-not (Test-Path $TrtllmConfig)) {
+    Copy-Item -LiteralPath (Join-Path $ShellDir "trtllm.default.json") -Destination $TrtllmConfig
+}
 
 Write-Host "Installing the desktop wrapper..."
 Invoke-Checked -FilePath "npm" -Arguments @("install", "--cache", $NpmCache) -WorkingDirectory $Wrapper

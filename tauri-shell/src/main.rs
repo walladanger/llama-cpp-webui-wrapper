@@ -13,7 +13,11 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent, WebviewWindow};
 
-const SERVER_EXE: &str = if cfg!(windows) { "llama-server.exe" } else { "llama-server" };
+const SERVER_EXE: &str = if cfg!(windows) {
+    "llama-server.exe"
+} else {
+    "llama-server"
+};
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct Server(Mutex<Option<Child>>);
@@ -38,7 +42,11 @@ fn root_dir() -> PathBuf {
     let start = exe.parent().map(Path::to_path_buf).unwrap_or_default();
     start
         .ancestors()
-        .find(|dir| dir.join("portable-data").is_dir() || dir.join("build").join("bin").is_dir() || dir.join("web-wrapper").is_dir())
+        .find(|dir| {
+            dir.join("portable-data").is_dir()
+                || dir.join("build").join("bin").is_dir()
+                || dir.join("web-wrapper").is_dir()
+        })
         .map(Path::to_path_buf)
         .unwrap_or(start)
 }
@@ -46,7 +54,10 @@ fn root_dir() -> PathBuf {
 fn find_server(root: &Path) -> Option<PathBuf> {
     [
         root.join("portable-data").join("bin").join(SERVER_EXE),
-        root.join("build").join("bin").join("Release").join(SERVER_EXE),
+        root.join("build")
+            .join("bin")
+            .join("Release")
+            .join(SERVER_EXE),
         root.join("build").join("bin").join(SERVER_EXE),
     ]
     .into_iter()
@@ -59,7 +70,10 @@ fn healthy(port: u16) -> bool {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    if stream.write_all(b"GET /health HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").is_err() {
+    if stream
+        .write_all(b"GET /health HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        .is_err()
+    {
         return false;
     }
     let mut head = [0u8; 16];
@@ -68,9 +82,99 @@ fn healthy(port: u16) -> bool {
 
 fn show_status(window: &WebviewWindow, text: &str, error: bool) {
     let text = serde_json::to_string(text).unwrap_or_default();
-    let class = if error { "document.body.classList.add('error');" } else { "" };
-    let _ = window.eval(format!("{class}document.getElementById('status').textContent = {text};"));
+    let class = if error {
+        "document.body.classList.add('error');"
+    } else {
+        ""
+    };
+    let _ = window.eval(format!(
+        "{class}document.getElementById('status').textContent = {text};"
+    ));
 }
+
+#[cfg(windows)]
+fn ask_download(message: &str) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDYES, MB_ICONQUESTION, MB_SETFOREGROUND, MB_YESNO,
+    };
+    let title: Vec<u16> = std::ffi::OsStr::new("llama.cpp WebUI - optional components")
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let body: Vec<u16> = std::ffi::OsStr::new(message)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_ICONQUESTION | MB_SETFOREGROUND | MB_YESNO,
+        ) == IDYES
+    }
+}
+
+#[cfg(windows)]
+fn report_install_error(message: &str) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND};
+    let title: Vec<u16> = std::ffi::OsStr::new("Optional component setup")
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let body: Vec<u16> = std::ffi::OsStr::new(message)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_ICONERROR | MB_SETFOREGROUND | MB_OK,
+        );
+    }
+}
+
+#[cfg(windows)]
+fn prompt_optional_components(root: &Path) {
+    let manager = std::env::current_exe()
+        .unwrap_or_default()
+        .with_file_name("llama-engine-manager.exe");
+    if !manager.is_file() {
+        return;
+    }
+    let bench = root.join("portable-data/bin/llama-bench.exe");
+    let separate_bench = root.join("portable-data/bench/bin/llama-bench.exe");
+    if !bench.is_file() && !separate_bench.is_file() && ask_download("llama-bench is missing. Download the matching pinned llama.cpp release now?\n\nThe benchmark runs locally and does not start an inference server.") {
+        let mut command = Command::new(&manager);
+        command.args(["bench", "install"]).env("LLAMA_WEBUI_ROOT", root);
+        no_console(&mut command);
+        match command.output() {
+            Ok(output) if output.status.success() => {},
+            Ok(output) => report_install_error(&String::from_utf8_lossy(&output.stderr)),
+            Err(error) => report_install_error(&format!("Could not download llama-bench: {error}")),
+        }
+    }
+    let mut command = Command::new(&manager);
+    command
+        .args(["trtllm", "installed"])
+        .env("LLAMA_WEBUI_ROOT", root);
+    no_console(&mut command);
+    if let Ok(output) = command.output() {
+        let message = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success() && message.trim() == "TensorRT-LLM is not installed in WSL2" && ask_download("TensorRT-LLM is missing from WSL2. Open NVIDIA's compatibility and installation guidance now?\n\nNVIDIA does not currently list RTX 3090 or RTX 4070 as supported hardware. Installation needs its own CUDA, MPI, and Python setup. After installation, set its executable and model in portable-data\\config\\trtllm.json.") {
+            if let Err(error) = Command::new("explorer.exe").arg("https://nvidia.github.io/TensorRT-LLM/installation/installation-guide.html").spawn() {
+                report_install_error(&format!("Could not open NVIDIA's installation guide: {error}"));
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn prompt_optional_components(_root: &Path) {}
 
 fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
     let data = root.join("portable-data");
@@ -80,7 +184,10 @@ fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
     }
 
     let exe = find_server(root).ok_or_else(|| {
-        format!("llama-server was not found under {}.\nRun Setup-Llama-WebUI.ps1 first.", root.display())
+        format!(
+            "llama-server was not found under {}.\nRun Setup-Llama-WebUI.ps1 first.",
+            root.display()
+        )
     })?;
 
     let settings_file = data.join("config").join("llama-server.json");
@@ -89,23 +196,38 @@ fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
     let mode = s.str("gpu_placement");
     match mode.as_str() {
         "" | "manual" => {}
-        "single" | "spread" => match gpu::plan(&mode, &gpu::list_devices(&exe), &s.str("tensor_split")) {
-            Some(p) => {
-                notes.push(format!("GPU placement \"{mode}\" -> {}", p.device));
-                s.set("device", &p.device);
-                s.set("split_mode", &p.split_mode);
-                s.set("main_gpu", "0");
-                s.set("tensor_split", &p.tensor_split);
+        "single" | "spread" => {
+            match gpu::plan(&mode, &gpu::list_devices(&exe), &s.str("tensor_split")) {
+                Some(p) => {
+                    notes.push(format!("GPU placement \"{mode}\" -> {}", p.device));
+                    s.set("device", &p.device);
+                    s.set("split_mode", &p.split_mode);
+                    s.set("main_gpu", "0");
+                    s.set("tensor_split", &p.tensor_split);
+                }
+                None => notes.push(format!(
+                    "GPU placement \"{mode}\" found no graphics card; using manual settings."
+                )),
             }
-            None => notes.push(format!("GPU placement \"{mode}\" found no graphics card; using manual settings.")),
-        },
-        other => notes.push(format!("GPU placement \"{other}\" is not supported here; using manual settings.")),
+        }
+        other => notes.push(format!(
+            "GPU placement \"{other}\" is not supported here; using manual settings."
+        )),
     }
     let args = settings::build_args(&s, port, &models);
 
     let log_path = logs.join("llama-server.log");
-    let mut log = OpenOptions::new().create(true).append(true).open(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
-    let _ = writeln!(log, "\n\n[tauri-shell] Starting {} {}", exe.display(), args.join(" "));
+    let mut log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("{}: {e}", log_path.display()))?;
+    let _ = writeln!(
+        log,
+        "\n\n[tauri-shell] Starting {} {}",
+        exe.display(),
+        args.join(" ")
+    );
     for note in &notes {
         let _ = writeln!(log, "{note}");
     }
@@ -120,34 +242,65 @@ fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
         .stdout(log)
         .stderr(err_log);
     no_console(&mut cmd);
-    cmd.spawn().map_err(|e| format!("Could not start {}: {e}", exe.display()))
+    cmd.spawn()
+        .map_err(|e| format!("Could not start {}: {e}", exe.display()))
 }
 
 fn start(window: WebviewWindow) {
     let app = window.app_handle().clone();
     let root = root_dir();
-    let port: u16 = std::env::var("LLAMA_CPP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080);
+    let port: u16 = std::env::var("LLAMA_CPP_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8080);
     let url = format!("http://127.0.0.1:{port}");
 
     std::thread::spawn(move || {
+        show_status(&window, "Checking optional components...", false);
+        prompt_optional_components(&root);
+        show_status(&window, "Starting llama-server...", false);
         // Reuse a server that is already running on the port.
         if !healthy(port) {
             match spawn_server(&root, port) {
                 Ok(child) => *app.state::<Server>().0.lock().unwrap() = Some(child),
                 Err(e) => return show_status(&window, &e, true),
             }
-            let log = root.join("portable-data").join("logs").join("llama-server.log");
+            let log = root
+                .join("portable-data")
+                .join("logs")
+                .join("llama-server.log");
             let started = Instant::now();
             loop {
                 if healthy(port) {
                     break;
                 }
-                let exited = app.state::<Server>().0.lock().unwrap().as_mut().map(|c| matches!(c.try_wait(), Ok(Some(_)))).unwrap_or(true);
+                let exited = app
+                    .state::<Server>()
+                    .0
+                    .lock()
+                    .unwrap()
+                    .as_mut()
+                    .map(|c| matches!(c.try_wait(), Ok(Some(_))))
+                    .unwrap_or(true);
                 if exited {
-                    return show_status(&window, &format!("llama-server stopped during startup.\nSee {}", log.display()), true);
+                    return show_status(
+                        &window,
+                        &format!(
+                            "llama-server stopped during startup.\nSee {}",
+                            log.display()
+                        ),
+                        true,
+                    );
                 }
                 if started.elapsed() > READY_TIMEOUT {
-                    return show_status(&window, &format!("llama-server did not answer on {url}.\nSee {}", log.display()), true);
+                    return show_status(
+                        &window,
+                        &format!(
+                            "llama-server did not answer on {url}.\nSee {}",
+                            log.display()
+                        ),
+                        true,
+                    );
                 }
                 std::thread::sleep(Duration::from_millis(500));
             }
