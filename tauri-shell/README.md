@@ -21,7 +21,7 @@ The default 0.5B model verifies the connection. For coding work, use a stronger 
 
 Install TensorRT-LLM in a separate WSL2 environment using [NVIDIA's installation guide](https://nvidia.github.io/TensorRT-LLM/installation/installation-guide.html). Its CUDA, MPI, and Python requirements differ from vLLM. Edit `portable-data\config\trtllm.json` with the WSL distro, the absolute path to `trtllm-serve` if it is in a virtual environment, a supported model, a free port, and optional GPU IDs. The default port is 8001, separate from vLLM's 8000.
 
-Check [NVIDIA's supported hardware list](https://nvidia.github.io/TensorRT-LLM/supported-hardware.html) first. As of the current guide, it lists data center GPUs such as A100 and L40, but does not list this machine's RTX 3090 or 4070. The manager can operate a compatible installation, but successful inference on this machine is unverified.
+The [current tested hardware list](https://nvidia.github.io/TensorRT-LLM/supported-hardware.html) names data center GPUs such as A100 and L40. An [earlier support matrix](https://nvidia.github.io/TensorRT-LLM/1.0.0/reference/support-matrix.html) includes Ampere SM86 and Ada SM89, the architectures used by GeForce RTX 30 and 40 series. Neither page proves that the current release and a chosen model work on this machine. Successful TensorRT-LLM inference here remains unverified; test a small model before relying on the service.
 
 ```powershell
 .\llama-engine-manager.exe trtllm installed

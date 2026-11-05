@@ -58,7 +58,7 @@
     </section>
     <section class="card" aria-labelledby="trtllm-title">
       <div class="card-head"><h2 id="trtllm-title">TensorRT-LLM</h2><span id="trtllm-badge" class="badge">Checking</span></div>
-      <p>Optional WSL2 service. Check NVIDIA hardware support before installation. Endpoint: <span id="trtllm-endpoint">127.0.0.1:8001/v1</span></p>
+      <p>Optional WSL2 service. Check GPU, CUDA, and model compatibility during setup. Endpoint: <span id="trtllm-endpoint">127.0.0.1:8001/v1</span></p>
       <div class="fields">
         <label>WSL distro<input id="trtllm-distro"></label><label>Executable in WSL<input id="trtllm-executable"></label>
         <label>Model<input id="trtllm-model"></label><label>Port<input id="trtllm-port" type="number" min="1" max="65535"></label>
@@ -157,7 +157,7 @@
     $('notices').replaceChildren();
     if ($('vllm-badge').textContent === 'Model differs') notice('vLLM is running a different model than the saved setting. Update the model field or stop the service before starting it again.', 'Show settings', () => $('vllm-model').focus());
     if ($('bench-badge').textContent === 'Missing') notice('llama-bench is missing. Download the matching pinned llama.cpp build?', 'Download', () => call('bench', 'install', null, null, $('bench-install')));
-    if ($('trtllm-badge').textContent === 'Missing') notice('TensorRT-LLM is missing in WSL2. NVIDIA does not list RTX 3090 or RTX 4070 as supported hardware.', 'Open install guide', () => invoke('open_trt_guide').catch(error => display('trtllm-output', String(error))));
+    if ($('trtllm-badge').textContent === 'Missing') notice('TensorRT-LLM is not installed in the configured WSL2 distro. GPU compatibility has not been tested on this machine.', 'Open install guide', () => invoke('open_trt_guide').catch(error => display('trtllm-output', String(error))));
   }
   document.addEventListener('click', event => {
     const save = event.target.closest('[data-save]'); if (save) return saveConfig(save.dataset.save);
