@@ -9,6 +9,10 @@ publish = false
 name = "llama-webui"
 path = "src/main.rs"
 
+[[bin]]
+name = "llama-engine-manager"
+path = "src/bin/llama-engine-manager.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }
 

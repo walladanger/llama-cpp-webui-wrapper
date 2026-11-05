@@ -41,16 +41,16 @@ jobs:
           path: tauri-shell/dist/Llama-WebUI-windows-x64-cuda.zip
           if-no-files-found: error
 
-      # Rolling release on main so the zip has a permanent download link.
+      # Publish only after the candidate package has passed a local GPU smoke test.
       - name: Publish release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "webui-latest"
           $llama = (Get-Content dist/llama-cpp-tag.txt) -replace '^tag=', ''
-          $notes = "Portable llama.cpp WebUI for Windows x64 (NVIDIA CUDA). Built from ${{ github.sha }} with llama.cpp $llama. Extract, put .gguf files in portable-data\models, run llama-webui.exe."
+          $notes = "Portable llama.cpp WebUI and WSL2 engine manager for Windows x64 (NVIDIA CUDA). Built from ${{ github.sha }} with llama.cpp $llama. Extract, put .gguf files in portable-data\models, run llama-webui.exe."
           gh release view $tag --repo ${{ github.repository }} *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo ${{ github.repository }} --title "llama.cpp WebUI (latest)" --notes $notes --target ${{ github.sha }} --latest
