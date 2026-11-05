@@ -1,6 +1,6 @@
 # Windows shell and WSL2 engines
 
-The Windows package contains `llama-webui.exe` for the bundled llama.cpp chat window and `llama-engine-manager.exe` for background WSL2 engines. The chat window remains a smoke test; API clients can connect directly to a running engine.
+The Windows package contains `llama-webui.exe`, a dashboard for background engines and benchmarks. Use its buttons to edit settings, start or stop vLLM and TensorRT-LLM, inspect status and logs, install a missing llama-bench, and run a GGUF benchmark. **Open llama.cpp chat test** starts the bundled llama-server on port 18080 and opens its web UI in a separate window. Set `LLAMA_CPP_PORT` to change that port. The test window refuses to connect to a server started by another app. API clients connect directly to the running engine. The companion `llama-engine-manager.exe` provides the same engine and benchmark commands for scripts.
 
 ## vLLM
 
@@ -35,7 +35,7 @@ The manager starts an independent WSL2 user service, disables NVIDIA usage telem
 
 ## llama-bench and startup prompts
 
-The official pinned llama.cpp package normally includes `llama-bench.exe`. If it is missing, the desktop app asks on startup whether to download the matching pinned release. The download is optional. To install or run it manually:
+The official pinned llama.cpp package normally includes `llama-bench.exe`. If it is missing, the dashboard displays a download prompt on startup for the matching pinned release. The download is optional. To install or run it manually:
 
 ```powershell
 .\llama-engine-manager.exe bench install
@@ -43,7 +43,7 @@ The official pinned llama.cpp package normally includes `llama-bench.exe`. If it
 .\llama-engine-manager.exe bench run C:\path\to\model.gguf CUDA2
 ```
 
-The benchmark runs 512 prompt tokens and 128 generated tokens, repeats each test three times, and saves the Markdown output to `portable-data\logs\llama-bench.md`. It measures llama.cpp itself; it does not benchmark the vLLM or TensorRT-LLM API. If TensorRT-LLM is missing in the configured WSL distro, the desktop app asks on startup whether to open NVIDIA's installation guide. It does not install TensorRT-LLM automatically because the required system packages and CUDA toolkit depend on the WSL environment.
+The benchmark runs 512 prompt tokens and 128 generated tokens, repeats each test three times, and saves the Markdown output to `portable-data\logs\llama-bench.md`. It measures llama.cpp itself; it does not benchmark the vLLM or TensorRT-LLM API. If TensorRT-LLM is missing in the configured WSL distro, the dashboard displays an installation guide prompt on startup. It does not install TensorRT-LLM automatically because the required system packages and CUDA toolkit depend on the WSL environment.
 
 ## Updating llama.cpp
 

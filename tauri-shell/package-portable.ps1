@@ -60,7 +60,8 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot "cuda-version.txt") -Destination
 llama.cpp WebUI - portable
 
 1. Put .gguf model files in portable-data\models
-2. Double-click llama-webui.exe
+2. Double-click llama-webui.exe to open the engine dashboard
+3. Use Open llama.cpp chat test for the bundled llama-server chat window (port 18080)
 
 Server settings (GPU placement, context, flash attention, ...): portable-data\config\llama-server.json
 Logs: portable-data\logs\llama-server.log

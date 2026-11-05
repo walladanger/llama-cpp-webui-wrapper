@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>llama.cpp WebUI</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f6f8; --ink: #1c1f2a; --muted: #6b7080; --accent: #ffaa3c; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #181c28; --ink: #ececf1; --muted: #9aa0b0; } }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; box-sizing: border-box; text-align: center; }
+  .spin { width: 34px; height: 34px; border: 3px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: s 0.9s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  #status { color: var(--muted); max-width: 640px; white-space: pre-wrap; }
+  body.error .spin { display: none; }
+  body.error #status { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <div class="spin"></div>
+  <div><strong>llama.cpp WebUI</strong></div>
+  <div id="status">Starting llama-server...</div>
+</main>
+</body>
+</html>
