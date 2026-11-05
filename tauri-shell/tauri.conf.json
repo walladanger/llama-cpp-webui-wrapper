@@ -7,12 +7,13 @@
     "frontendDist": "ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "title": "llama.cpp WebUI",
-        "width": 1280,
-        "height": 860,
+        "title": "Llama Engine Manager",
+        "width": 1160,
+        "height": 820,
         "minWidth": 640,
         "minHeight": 480,
         "center": true

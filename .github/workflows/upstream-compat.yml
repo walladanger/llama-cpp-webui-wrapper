@@ -1,0 +1,66 @@
+name: Upstream release compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-wrapper:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build Node wrapper
+        run: npm run build --prefix web-wrapper
+
+      - name: Test Rust wrapper
+        run: cargo test --manifest-path tauri-shell/Cargo.toml
+
+      - name: Build Windows executables
+        run: cargo build --release --manifest-path tauri-shell/Cargo.toml
+
+      - name: Check pinned release assets and CPU server
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $tag = (Get-Content -LiteralPath tauri-shell/llama-cpp-release.txt -Raw).Trim()
+          $cuda = (Get-Content -LiteralPath tauri-shell/cuda-version.txt -Raw).Trim()
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$tag" -Headers @{ 'User-Agent' = 'llama-webui-upstream-compat'; 'Authorization' = "Bearer $env:GITHUB_TOKEN" }
+          $needed = @("llama-$tag-bin-win-cuda-$cuda-x64.zip", "cudart-llama-bin-win-cuda-$cuda-x64.zip", "llama-$tag-bin-win-cpu-x64.zip")
+          $names = @($release.assets | ForEach-Object { $_.name })
+          foreach ($name in $needed) {
+            if ($name -notin $names) { throw "Pinned release $tag is missing $name" }
+          }
+          $cpu = $release.assets | Where-Object { $_.name -eq "llama-$tag-bin-win-cpu-x64.zip" } | Select-Object -First 1
+          Invoke-WebRequest -Uri $cpu.browser_download_url -OutFile cpu-server.zip -Headers @{ 'User-Agent' = 'llama-webui-upstream-compat' }
+          Expand-Archive -LiteralPath cpu-server.zip -DestinationPath cpu-server
+          $server = Get-ChildItem -LiteralPath cpu-server -Filter llama-server.exe -Recurse | Select-Object -First 1
+          if (-not $server) { throw 'CPU release has no llama-server.exe' }
+          $bench = Get-ChildItem -LiteralPath cpu-server -Filter llama-bench.exe -Recurse | Select-Object -First 1
+          if (-not $bench) { throw 'CPU release has no llama-bench.exe' }
+          if (-not (Test-Path -LiteralPath (Join-Path $bench.DirectoryName 'llama-bench-impl.dll'))) { throw 'CPU release has no llama-bench-impl.dll' }
+          & $server.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned CPU llama-server did not start' }
+          & $bench.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned CPU llama-bench did not start' }
+
+      - name: Package pinned CUDA release
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: ./tauri-shell/package-portable.ps1
+
+      - name: Check portable engine tools
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $app = 'tauri-shell/dist/Llama-WebUI'
+          foreach ($path in @('llama-engine-manager.exe', 'portable-data/config/trtllm.json', 'portable-data/bin/llama-bench.exe', 'install-llama-bench.ps1')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $app $path))) { throw "Portable package is missing $path" }
+          }
+          & (Join-Path $app 'llama-engine-manager.exe') bench installed
+          if ($LASTEXITCODE -ne 0) { throw 'Portable llama-bench detection failed' }

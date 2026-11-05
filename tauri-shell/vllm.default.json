@@ -1,0 +1,11 @@
+{
+  "distro": "Ubuntu",
+  "executable": "vllm",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "port": 8000,
+  "cuda_visible_devices": "",
+  "cuda_home": "",
+  "flashinfer_sampler": false,
+  "gpu_memory_utilization": 0.8,
+  "max_model_len": 32768
+}
