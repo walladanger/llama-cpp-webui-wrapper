@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>llama.cpp WebUI</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f6f8; --ink: #1c1f2a; --muted: #6b7080; --accent: #ffaa3c; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #181c28; --ink: #ececf1; --muted: #9aa0b0; } }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; box-sizing: border-box; text-align: center; }
+  .spin { width: 34px; height: 34px; border: 3px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: s 0.9s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  #status { color: var(--muted); max-width: 640px; white-space: pre-wrap; }
+  body.error .spin { display: none; }
+  body.error #status { color: var(--ink); }
+  .titlebar { height: 40px; display: flex; align-items: center; justify-content: space-between; background: #22242b; color: #eee; user-select: none; }
+  .titlebar strong { padding-left: 16px; font-size: 13px; }
+  .titlebar button { width: 44px; height: 40px; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 18px; }
+  .titlebar button:hover { background: #3b3d45; }
+  main { height: calc(100% - 40px); }
+</style>
+<link rel="stylesheet" href="context-help.css">
+<script defer src="context-help-catalog.js"></script>
+<script defer src="context-help.js"></script>
+</head>
+<body>
+<div class="titlebar" id="titlebar"><strong>llama.cpp</strong><div><button id="minimize" aria-label="Minimize">−</button><button id="maximize" aria-label="Maximize">□</button><button id="close" aria-label="Close">×</button></div></div>
+<main>
+  <div class="spin"></div>
+  <div><strong>llama.cpp WebUI</strong></div>
+  <div id="status">Starting llama-server...</div>
+</main>
+<script>
+  const invoke = window.__TAURI__?.core?.invoke;
+  document.getElementById('titlebar').addEventListener('pointerdown', event => { if (event.button === 0 && !event.target.closest('button')) invoke?.('window_action', { action: 'drag' }); });
+  for (const action of ['minimize', 'maximize', 'close']) document.getElementById(action).addEventListener('click', () => invoke?.('window_action', { action }));
+</script>
+</body>
+</html>

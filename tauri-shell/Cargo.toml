@@ -9,6 +9,10 @@ publish = false
 name = "llama-webui"
 path = "src/main.rs"
 
+[[bin]]
+name = "llama-engine-manager"
+path = "src/bin/llama-engine-manager.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }
 
@@ -16,6 +20,8 @@ tauri-build = { version = "2.5", features = [] }
 tauri = { version = "2.10", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10.9"
+rfd = { version = "0.15.4", default-features = false }
 
 [profile.release]
 opt-level = "s"

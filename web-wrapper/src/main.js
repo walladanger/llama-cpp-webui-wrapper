@@ -3,6 +3,8 @@ const { createWriteStream, existsSync, mkdirSync } = require("node:fs");
 const { join, resolve } = require("node:path");
 const { setTimeout: delay } = require("node:timers/promises");
 const { runCli } = require("./runtimes/cli.js");
+const { assertArguments } = require("./runtimes/runtime-capabilities.js");
+const { redactArgs } = require("./runtimes/server-args.js");
 const { prepareLaunch } = require("./runtimes/launch.js");
 
 const ROOT_DIR = resolve(__dirname, "..", "..");
@@ -16,6 +18,7 @@ const SERVER_EXE_DEFAULT = join(ROOT_DIR, "build", "bin", "llama-server.exe");
 const SERVER_EXE_PORTABLE = join(DATA_DIR, "bin", "llama-server.exe");
 const LOG_FILE = join(LOG_DIR, "llama-server.log");
 const SETTINGS_FILE = join(DATA_DIR, "config", "llama-server.json");
+const UI_DIR = join(DATA_DIR, "ui");
 
 let serverProcess;
 let shellProcess;
@@ -52,20 +55,18 @@ async function startServer() {
   }
 
   const logStream = createWriteStream(LOG_FILE, { flags: "a" });
-  const launch = await prepareLaunch({ executable, settingsFile: SETTINGS_FILE, port: SERVER_PORT, modelsDir: MODELS_DIR });
+  const launch = await prepareLaunch({ executable, settingsFile: SETTINGS_FILE, port: SERVER_PORT, modelsDir: MODELS_DIR, verifyCapabilities: true, cacheDir: join(DATA_DIR, "cache") });
   const args = launch.args;
+  if (existsSync(join(UI_DIR, "index.html"))) args.push("--path", UI_DIR);
+  assertArguments(launch.capabilities, args);
 
   serverProcess = spawn(executable, args, {
     cwd: ROOT_DIR,
-    env: {
-      ...process.env,
-      ...launch.env,
-      LLAMA_CACHE: join(DATA_DIR, "cache"),
-    },
+    env: launch.env,
     windowsHide: true,
   });
 
-  logStream.write(`\n\n[${new Date().toISOString()}] Starting ${executable} ${args.join(" ")}\n`);
+  logStream.write(`\n\n[${new Date().toISOString()}] Starting ${executable} ${redactArgs(args).join(" ")}\n`);
   for (const note of launch.notes) logStream.write(`${note}\n`);
   serverProcess.stdout.pipe(logStream, { end: false });
   serverProcess.stderr.pipe(logStream, { end: false });

@@ -23,6 +23,7 @@ const SERVER_EXE_DEFAULT = join(ROOT_DIR, "build", "bin", "llama-server.exe");
 const SERVER_EXE_PORTABLE = join(DATA_DIR, "bin", "llama-server.exe");
 const LOG_FILE = join(LOG_DIR, "llama-server.log");
 const SETTINGS_FILE = join(DATA_DIR, "config", "llama-server.json");
+const UI_DIR = join(DATA_DIR, "ui");
 
 let serverProcess: ChildProcessWithoutNullStreams | undefined;
 let shellProcess: ChildProcessWithoutNullStreams | undefined;
@@ -61,6 +62,7 @@ async function startServer(): Promise<void> {
   const logStream = createWriteStream(LOG_FILE, { flags: "a" });
   const launch = await prepareLaunch({ executable, settingsFile: SETTINGS_FILE, port: SERVER_PORT, modelsDir: MODELS_DIR });
   const args = launch.args;
+  if (existsSync(join(UI_DIR, "index.html"))) args.push("--path", UI_DIR);
 
   serverProcess = spawn(executable, args, {
     cwd: ROOT_DIR,

@@ -22,14 +22,8 @@ import { getAuthHeaders } from '$lib/utils/api-headers';
 export class ModelsService {
 	private static readonly SSE_RECONNECT_MS = 1000;
 
-	/**
-	 * Check if a model is loaded based on its metadata.
-	 *
-	 * @param model - Model data entry from the API response
-	 * @returns True if the model status is LOADED
-	 */
-	static isModelLoaded(model: ApiModelDataEntry): boolean {
-		return model.status.value === ServerModelStatus.LOADED;
+	static async downloadFromHuggingFace(model: string): Promise<{ success: boolean }> {
+		return apiPost<{ success: boolean }>('/models', { model });
 	}
 
 	/**
@@ -39,6 +33,16 @@ export class ModelsService {
 	 *
 	 *
 	 */
+
+	/**
+	 * Check if a model is loaded based on its metadata.
+	 *
+	 * @param model - Model data entry from the API response
+	 * @returns True if the model status is LOADED
+	 */
+	static isModelLoaded(model: ApiModelDataEntry): boolean {
+		return model.status.value === ServerModelStatus.LOADED;
+	}
 
 	/**
 	 * Check if a model is currently loading.
@@ -210,6 +214,10 @@ export class ModelsService {
 		}
 
 		return result;
+	}
+
+	static async reloadRouter(): Promise<ApiRouterModelsListResponse> {
+		return apiFetch<ApiRouterModelsListResponse>(`${API_MODELS.LIST}?reload=1`);
 	}
 
 	/**
