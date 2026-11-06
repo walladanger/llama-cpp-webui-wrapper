@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod gpu;
+mod gguf_meta;
 mod launch;
 mod local_files;
 mod process_probe;
@@ -180,6 +181,13 @@ fn start(window: WebviewWindow) {
     let url = format!("http://127.0.0.1:{port}");
 
     std::thread::spawn(move || {
+        let trace = root.join("portable-data/logs/shell-startup.log");
+        let record = |message: &str| {
+            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&trace) {
+                let _ = writeln!(file, "{message}");
+            }
+        };
+        record("Starting desktop navigation");
         let owned = app
             .state::<Server>()
             .0
@@ -187,6 +195,7 @@ fn start(window: WebviewWindow) {
             .unwrap()
             .as_mut()
             .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
+        record(&format!("Initial health: {}, owned: {owned}", healthy(port)));
         if healthy(port) && !owned {
             return show_status(
                 &window,
@@ -197,7 +206,10 @@ fn start(window: WebviewWindow) {
         if !healthy(port) {
             if !owned {
                 match spawn_server(&root, port) {
-                    Ok(child) => *app.state::<Server>().0.lock().unwrap() = Some(child),
+                    Ok(child) => {
+                        *app.state::<Server>().0.lock().unwrap() = Some(child);
+                        record("Spawned llama-server");
+                    }
                     Err(e) => return show_status(&window, &e, true),
                 }
             }
@@ -208,6 +220,7 @@ fn start(window: WebviewWindow) {
             let started = Instant::now();
             loop {
                 if healthy(port) {
+                    record("Health check passed");
                     break;
                 }
                 let exited = app
@@ -243,7 +256,14 @@ fn start(window: WebviewWindow) {
         }
         match url.parse() {
             Ok(target) => {
-                let _ = window.navigate(target);
+                record("Navigating to server");
+                match window.navigate(target) {
+                    Ok(()) => record("Navigation request accepted"),
+                    Err(e) => {
+                        record(&format!("Navigation failed: {e}"));
+                        show_status(&window, &format!("Could not open the web UI: {e}"), true);
+                    }
+                }
             }
             Err(e) => show_status(&window, &format!("Bad URL {url}: {e}"), true),
         }
@@ -395,6 +415,26 @@ fn list_models(window: WebviewWindow) -> Result<Vec<String>, String> {
         .iter()
         .map(|path| path.to_string_lossy().into_owned())
         .collect())
+}
+
+#[tauri::command]
+async fn list_model_details(window: WebviewWindow) -> Result<Vec<local_files::ModelDetail>, String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| local_files::model_details(&root_dir()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn rescan_model_folders(window: WebviewWindow) -> Result<(), String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| {
+        let root = root_dir();
+        local_files::write_presets(&root, &local_files::load(&root)?)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn config_path(engine: &str) -> Result<PathBuf, String> {
@@ -575,6 +615,8 @@ fn main() {
             open_chat,
             manager_call,
             list_models,
+            list_model_details,
+            rescan_model_folders,
             read_engine_config,
             save_engine_config,
             open_trt_guide,

@@ -4,6 +4,8 @@ fn main() {
             "open_chat",
             "manager_call",
             "list_models",
+            "list_model_details",
+            "rescan_model_folders",
             "read_engine_config",
             "save_engine_config",
             "open_trt_guide",

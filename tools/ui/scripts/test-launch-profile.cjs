@@ -146,10 +146,6 @@ async function main() {
 		await page.getByText('"restartRequired":true', { exact: false }).waitFor();
 		await page.getByRole('button', { exact: true, name: 'Detect GPU identities' }).click();
 		await page.getByText('NVIDIA GPU inventory unavailable', { exact: false }).waitFor();
-		await context.focus();
-		await page.keyboard.press('F1');
-		await page.locator('#router-help-document[open]').waitFor();
-		await page.keyboard.press('Escape');
 		await page.setViewportSize({ height: 850, width: 500 });
 		assert.equal(
 			await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),

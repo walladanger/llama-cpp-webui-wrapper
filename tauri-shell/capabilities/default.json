@@ -9,6 +9,8 @@
     "allow-open-chat",
     "allow-manager-call",
     "allow-list-models",
+    "allow-list-model-details",
+    "allow-rescan-model-folders",
     "allow-read-engine-config",
     "allow-save-engine-config",
     "allow-open-trt-guide",
