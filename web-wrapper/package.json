@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "scan": "node dist/main.js --scan",
     "catalog": "node dist/main.js --catalog",
-    "sync-catalog": "node scripts/sync-catalog.mjs"
+    "sync-catalog": "node scripts/sync-catalog.mjs",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {},
   "devDependencies": {}

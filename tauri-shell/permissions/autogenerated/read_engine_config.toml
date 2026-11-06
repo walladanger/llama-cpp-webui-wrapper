@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-engine-config"
+description = "Enables the read_engine_config command without any pre-configured scope."
+commands.allow = ["read_engine_config"]
+
+[[permission]]
+identifier = "deny-read-engine-config"
+description = "Denies the read_engine_config command without any pre-configured scope."
+commands.deny = ["read_engine_config"]

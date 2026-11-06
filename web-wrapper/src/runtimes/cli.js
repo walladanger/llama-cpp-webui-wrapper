@@ -79,12 +79,19 @@ async function printSettings(ctx) {
   const launch = await prepareLaunch({ executable: ctx.executable, settingsFile: ctx.settingsFile, port: ctx.ownPort, modelsDir: ctx.modelsDir });
   console.log(`Settings: ${ctx.settingsFile}`);
   for (const note of launch.notes) console.log(note);
-  for (const [key, value] of Object.entries(launch.env)) console.log(`env ${key}=${value}`);
-  console.log(`${ctx.executable ?? "llama-server"} ${launch.args.join(" ")}`);
+  console.log(JSON.stringify({ requested: launch.requested, effective: launch.effective, ...launch.diagnostics }, (key, value) => key === "llamacpp_env" ? "[redacted]" : value, 2));
+  console.log(`${ctx.executable ?? "llama-server"} ${require("./server-args.js").redactArgs(launch.args).join(" ")}`);
 }
 
 // ctx: { ownPort, executable, settingsFile, modelsDir }
 async function runCli(argv, ctx) {
+  if (argv.includes('--capabilities')) {
+    if (!ctx.executable) throw new Error('llama-server not found');
+    const {inspectRuntime}=require('./runtime-capabilities.js');
+    const {childEnvironment}=require('./server-args.js');
+    console.log(JSON.stringify(await inspectRuntime(ctx.executable,{env:childEnvironment(settings.load(ctx.settingsFile))}),null,2));
+    return true;
+  }
   if (argv.includes("--init-settings")) {
     console.log(settings.writeDefaults(ctx.settingsFile) ? `Wrote ${ctx.settingsFile}` : `${ctx.settingsFile} already exists; left unchanged.`);
     return true;

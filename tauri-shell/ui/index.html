@@ -2,24 +2,178 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>llama.cpp WebUI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Llama Engine Manager</title>
 <style>
-  :root { color-scheme: light dark; --bg: #f6f6f8; --ink: #1c1f2a; --muted: #6b7080; --accent: #ffaa3c; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #181c28; --ink: #ececf1; --muted: #9aa0b0; } }
-  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
-  main { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; box-sizing: border-box; text-align: center; }
-  .spin { width: 34px; height: 34px; border: 3px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: s 0.9s linear infinite; }
-  @keyframes s { to { transform: rotate(360deg); } }
-  #status { color: var(--muted); max-width: 640px; white-space: pre-wrap; }
-  body.error .spin { display: none; }
-  body.error #status { color: var(--ink); }
+  :root { color-scheme: dark; font: 15px/1.5 "Segoe UI", system-ui, sans-serif; background: #10151d; color: #e7edf5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 32px; border-bottom: 1px solid #2c3847; background: #17202b; }
+  h1 { font-size: 23px; margin: 0; } h2 { font-size: 19px; margin: 0; }
+  p { margin: 6px 0 0; color: #aab8ca; }
+  main { max-width: 1300px; padding: 26px 32px 50px; margin: auto; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .card { border: 1px solid #304052; border-radius: 14px; background: #19232f; padding: 22px; min-width: 0; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .wide { grid-column: 1 / -1; }
+  .badge { border-radius: 999px; padding: 4px 10px; font-size: 12px; color: #d8e4f3; background: #34445a; white-space: nowrap; }
+  .badge.ready { color: #a9f3cc; background: #1d503b; } .badge.missing { color: #ffd2a3; background: #5b3824; }
+  .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+  label { display: grid; gap: 5px; color: #b9c7d8; font-size: 13px; }
+  input, select { width: 100%; border: 1px solid #43566c; border-radius: 7px; padding: 9px 10px; background: #101923; color: #f2f6fb; font: inherit; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid #f6b65b; outline-offset: 2px; }
+  input[type="checkbox"] { width: auto; } .check { display: flex; align-items: center; gap: 9px; margin-top: 25px; }
+  .actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 18px; }
+  button { border: 1px solid #4a627b; border-radius: 8px; padding: 9px 14px; color: #f2f6fb; background: #2b3e52; font: inherit; cursor: pointer; }
+  button:hover { background: #3a536d; } button.primary { border-color: #c78735; background: #a86b27; }
+  button.primary:hover { background: #c17d2d; } button:disabled { opacity: .55; cursor: wait; }
+  pre { margin: 16px 0 0; padding: 13px; border: 1px solid #29394b; border-radius: 8px; background: #101923; color: #d1ddea; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; font: 12px/1.5 Consolas, monospace; }
+  #notices { display: grid; gap: 10px; margin-bottom: 20px; }
+  .notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid #725434; border-radius: 9px; background: #382b22; }
+  .notice button { white-space: nowrap; }
+  @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } header { flex-wrap: wrap; } }
+  @media (max-width: 560px) { main { padding: 18px; } header { padding: 18px; } .fields { grid-template-columns: 1fr; } .notice { align-items: flex-start; flex-direction: column; } }
 </style>
+<link rel="stylesheet" href="context-help.css">
+<script defer src="context-help-catalog.js"></script>
+<script defer src="context-help.js"></script>
 </head>
 <body>
+<header>
+  <div><h1>Llama Engine Manager</h1><p>Local inference services for other apps. The llama.cpp chat is a test window.</p></div>
+  <div class="actions" style="margin:0"><button id="refresh-all">Refresh status</button><button id="open-chat" class="primary">Open llama.cpp chat test</button></div>
+</header>
 <main>
-  <div class="spin"></div>
-  <div><strong>llama.cpp WebUI</strong></div>
-  <div id="status">Starting llama-server...</div>
+  <div id="notices" aria-live="polite"></div>
+  <div class="grid">
+    <section class="card" aria-labelledby="vllm-title">
+      <div class="card-head"><h2 id="vllm-title">vLLM</h2><span id="vllm-badge" class="badge">Checking</span></div>
+      <p>WSL2 service for external API clients. Endpoint: <span id="vllm-endpoint">127.0.0.1:8000/v1</span></p>
+      <div class="fields">
+        <label>WSL distro<input id="vllm-distro"></label><label>Executable in WSL<input id="vllm-executable"></label>
+        <label>Model<input id="vllm-model"></label><label>Port<input id="vllm-port" type="number" min="1" max="65535"></label>
+        <label>GPU IDs (optional)<input id="vllm-cuda_visible_devices" placeholder="0,1"></label><label>Max context length<input id="vllm-max_model_len" type="number" min="1"></label>
+        <label>GPU memory fraction<input id="vllm-gpu_memory_utilization" type="number" min="0.01" max="1" step="0.01"></label><label>CUDA_HOME in WSL<input id="vllm-cuda_home" placeholder="/usr/local/cuda"></label>
+        <label class="check"><input id="vllm-flashinfer_sampler" type="checkbox"> Use FlashInfer sampler</label>
+      </div>
+      <div class="actions"><button data-save="vllm">Save settings</button><button data-engine="vllm" data-action="start" class="primary">Start</button><button data-engine="vllm" data-action="stop">Stop</button><button data-engine="vllm" data-action="status">Status</button><button data-engine="vllm" data-action="logs">Logs</button></div>
+      <pre id="vllm-output" aria-live="polite">Checking vLLM...</pre>
+    </section>
+    <section class="card" aria-labelledby="trtllm-title">
+      <div class="card-head"><h2 id="trtllm-title">TensorRT-LLM</h2><span id="trtllm-badge" class="badge">Checking</span></div>
+      <p>Optional WSL2 service. Check GPU, CUDA, and model compatibility during setup. Endpoint: <span id="trtllm-endpoint">127.0.0.1:8001/v1</span></p>
+      <div class="fields">
+        <label>WSL distro<input id="trtllm-distro"></label><label>Executable in WSL<input id="trtllm-executable"></label>
+        <label>Model<input id="trtllm-model"></label><label>Port<input id="trtllm-port" type="number" min="1" max="65535"></label>
+        <label>GPU IDs (optional)<input id="trtllm-cuda_visible_devices" placeholder="0"></label>
+      </div>
+      <div class="actions"><button data-save="trtllm">Save settings</button><button data-engine="trtllm" data-action="start" class="primary">Start</button><button data-engine="trtllm" data-action="stop">Stop</button><button data-engine="trtllm" data-action="status">Status</button><button data-engine="trtllm" data-action="logs">Logs</button><button id="trt-guide">Install guide</button></div>
+      <pre id="trtllm-output" aria-live="polite">Checking TensorRT-LLM...</pre>
+    </section>
+    <section class="card wide" aria-labelledby="bench-title">
+      <div class="card-head"><h2 id="bench-title">llama-bench</h2><span id="bench-badge" class="badge">Checking</span></div>
+      <p>Measure prompt and generation speed of a local GGUF model. Results are saved to <code>portable-data/logs/llama-bench.md</code>.</p>
+      <div class="fields"><label>GGUF model<select id="bench-model"><option value="">Choose a model</option></select></label><label>Device (optional)<input id="bench-device" placeholder="CUDA2"></label></div>
+      <div class="actions"><button id="bench-run" class="primary">Run benchmark</button><button id="bench-install">Download llama-bench</button><button id="bench-refresh">Refresh models</button></div>
+      <pre id="bench-output" aria-live="polite">Checking llama-bench...</pre>
+    </section>
+  </div>
 </main>
+<script>
+  const invoke = window.__TAURI__?.core?.invoke;
+  const $ = id => document.getElementById(id);
+  const configs = {};
+  const fields = {
+    vllm: ['distro', 'executable', 'model', 'port', 'cuda_visible_devices', 'max_model_len', 'gpu_memory_utilization', 'cuda_home', 'flashinfer_sampler'],
+    trtllm: ['distro', 'executable', 'model', 'port', 'cuda_visible_devices']
+  };
+  const display = (id, text) => { $(id).textContent = text || 'Done.'; };
+  function badge(engine, label, kind = '') { const node = $(`${engine}-badge`); node.textContent = label; node.className = `badge ${kind}`; }
+  function notice(message, buttonText, click) {
+    const row = document.createElement('div'); row.className = 'notice';
+    const copy = document.createElement('span'); copy.textContent = message;
+    const button = document.createElement('button'); button.textContent = buttonText; button.addEventListener('click', click);
+    row.append(copy, button); $('notices').append(row);
+  }
+  function endpoint(engine) { $(`${engine}-endpoint`).textContent = `http://127.0.0.1:${$(`${engine}-port`).value || '?'}/v1`; }
+  async function loadConfig(engine) {
+    try {
+      const config = await invoke('read_engine_config', { engine }); configs[engine] = config;
+      for (const field of fields[engine]) {
+        const node = $(`${engine}-${field}`);
+        if (node.type === 'checkbox') node.checked = Boolean(config[field]); else node.value = config[field] ?? '';
+      }
+      endpoint(engine);
+    } catch (error) { display(`${engine}-output`, `Could not read settings: ${error}`); }
+  }
+  async function saveConfig(engine) {
+    if (!configs[engine]) return;
+    const config = { ...configs[engine] };
+    for (const field of fields[engine]) {
+      const node = $(`${engine}-${field}`);
+      config[field] = node.type === 'checkbox' ? node.checked : node.type === 'number' ? Number(node.value) : node.value.trim();
+    }
+    try { await invoke('save_engine_config', { engine, config }); configs[engine] = config; endpoint(engine); display(`${engine}-output`, 'Settings saved. Stop and restart a running service to apply changes.'); }
+    catch (error) { display(`${engine}-output`, `Could not save settings: ${error}`); }
+  }
+  async function call(engine, action, model, device, button) {
+    if (button) button.disabled = true;
+    display(`${engine}-output`, `${action === 'start' ? 'Starting' : action === 'run' ? 'Benchmarking' : 'Running'}...`);
+    try {
+      const result = await invoke('manager_call', { engine, action, model: model || null, device: device || null });
+      display(`${engine}-output`, result);
+      if (action === 'start' || action === 'stop') await refreshEngine(engine);
+      if (action === 'install') await refreshAll();
+    } catch (error) { display(`${engine}-output`, String(error)); if (action === 'start') badge(engine, 'Error', 'missing'); }
+    finally { if (button) button.disabled = false; }
+  }
+  async function refreshEngine(engine) {
+    if (engine === 'bench') {
+      try { await invoke('manager_call', { engine: 'bench', action: 'installed' }); badge('bench', 'Installed', 'ready'); if ($('bench-output').textContent === 'Checking llama-bench...') display('bench-output', 'Ready. Choose a GGUF model and device to run a benchmark.'); }
+      catch { badge('bench', 'Missing', 'missing'); }
+      return;
+    }
+    if (engine === 'trtllm') {
+      try { await invoke('manager_call', { engine, action: 'installed' }); }
+      catch (error) { badge(engine, String(error).includes('not installed in WSL2') ? 'Missing' : 'Unavailable', 'missing'); display(`${engine}-output`, String(error)); return; }
+    }
+    try {
+      const status = await invoke('manager_call', { engine, action: 'status' });
+      display(`${engine}-output`, status);
+      const ready = status.includes('ActiveState=active') && status.includes('HTTP health: ready');
+      const served = status.match(/^Running model: (.+)$/m)?.[1];
+      const mismatch = ready && served && configs[engine]?.model !== served;
+      badge(engine, mismatch ? 'Model differs' : ready ? 'Ready' : 'Stopped', mismatch ? 'missing' : ready ? 'ready' : '');
+    } catch (error) { badge(engine, 'Unavailable', 'missing'); display(`${engine}-output`, String(error)); }
+  }
+  async function refreshModels() {
+    try {
+      const selected = $('bench-model').value; const names = await invoke('list_models');
+      $('bench-model').replaceChildren(new Option('Choose a model', ''));
+      for (const name of names) $('bench-model').add(new Option(name, name));
+      if (names.includes(selected)) $('bench-model').value = selected;
+      if (!names.length) display('bench-output', 'No GGUF files in portable-data/models. Add a model, then refresh models.');
+    } catch (error) { display('bench-output', `Could not list models: ${error}`); }
+  }
+  async function refreshAll() {
+    await Promise.all([refreshEngine('vllm'), refreshEngine('trtllm'), refreshEngine('bench')]);
+    $('notices').replaceChildren();
+    if ($('vllm-badge').textContent === 'Model differs') notice('vLLM is running a different model than the saved setting. Update the model field or stop the service before starting it again.', 'Show settings', () => $('vllm-model').focus());
+    if ($('bench-badge').textContent === 'Missing') notice('llama-bench is missing. Download the matching pinned llama.cpp build?', 'Download', () => call('bench', 'install', null, null, $('bench-install')));
+    if ($('trtllm-badge').textContent === 'Missing') notice('TensorRT-LLM is not installed in the configured WSL2 distro. GPU compatibility has not been tested on this machine.', 'Open install guide', () => invoke('open_trt_guide').catch(error => display('trtllm-output', String(error))));
+  }
+  document.addEventListener('click', event => {
+    const save = event.target.closest('[data-save]'); if (save) return saveConfig(save.dataset.save);
+    const action = event.target.closest('[data-engine][data-action]'); if (action) return call(action.dataset.engine, action.dataset.action, null, null, action);
+  });
+  $('refresh-all').addEventListener('click', refreshAll);
+  $('open-chat').addEventListener('click', () => invoke('open_chat').catch(error => notice(`Could not open llama.cpp chat: ${error}`, 'Retry', () => $('open-chat').click())));
+  $('trt-guide').addEventListener('click', () => invoke('open_trt_guide').catch(error => display('trtllm-output', String(error))));
+  $('bench-run').addEventListener('click', event => call('bench', 'run', $('bench-model').value, $('bench-device').value.trim(), event.currentTarget));
+  $('bench-install').addEventListener('click', event => call('bench', 'install', null, null, event.currentTarget));
+  $('bench-refresh').addEventListener('click', refreshModels);
+  if (!invoke) { $('notices').textContent = 'This dashboard must be opened in the Llama desktop app.'; }
+  else { Promise.all([loadConfig('vllm'), loadConfig('trtllm'), refreshModels()]).then(refreshAll); }
+</script>
 </body>
 </html>

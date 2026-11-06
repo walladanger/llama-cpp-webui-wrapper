@@ -7,12 +7,15 @@
     "frontendDist": "ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "title": "llama.cpp WebUI",
-        "width": 1280,
-        "height": 860,
+        "title": "llama.cpp",
+        "url": "chat.html",
+        "decorations": false,
+        "width": 1160,
+        "height": 820,
         "minWidth": 640,
         "minHeight": 480,
         "center": true
