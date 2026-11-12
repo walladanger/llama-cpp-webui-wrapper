@@ -1,4 +1,3 @@
-import { ROUTES } from './routes.constants';
 import {
 	Activity,
 	Cpu,
@@ -11,6 +10,7 @@ import {
 } from '@lucide/svelte';
 import { SidebarAction, ToolSource } from '$lib/enums';
 import type { DesktopIconStripItem } from '$lib/types';
+import { ROUTES } from './routes.constants';
 
 export const FORK_TREE_DEPTH_PADDING = 8;
 export const SYSTEM_MESSAGE_PLACEHOLDER = 'System message';
@@ -71,11 +71,16 @@ export const SIDEBAR_ACTIONS_ITEMS: DesktopIconStripItem[] = [
 		tooltip: 'New chat'
 	},
 	{ icon: Search, keys: ['cmd', 'k'], tooltip: 'Search' },
-	{ activeRouteId: '/models', icon: Package, route: ROUTES.MODELS, tooltip: 'Models' },
-	{ activeRouteId: '/logs', icon: FileText, route: ROUTES.LOGS, tooltip: 'Logs' },
-	{ activeRouteId: '/vllm', icon: Cpu, route: ROUTES.VLLM, tooltip: 'vLLM' },
-	{ activeRouteId: '/tensorrt-llm', icon: Activity, route: ROUTES.TRTLLM, tooltip: 'TensorRT-LLM' },
-	{ activeRouteId: '/llama-bench', icon: Gauge, route: ROUTES.BENCH, tooltip: 'llama-bench' },
+	{ icon: Package, route: ROUTES.MODELS, activeRouteId: '/models', tooltip: 'Models' },
+	{ icon: FileText, route: ROUTES.LOGS, activeRouteId: '/logs', tooltip: 'Logs' },
+	{ icon: Cpu, route: ROUTES.VLLM, activeRouteId: '/vllm', tooltip: 'vLLM' },
+	{ icon: Activity, route: ROUTES.TRTLLM, activeRouteId: '/tensorrt-llm', tooltip: 'TensorRT-LLM' },
+	{
+		icon: Gauge,
+		route: ROUTES.BENCH,
+		activeRouteId: '/llama-bench',
+		tooltip: 'Performance & advice'
+	},
 	{
 		action: SidebarAction.SETTINGS,
 		icon: Settings,

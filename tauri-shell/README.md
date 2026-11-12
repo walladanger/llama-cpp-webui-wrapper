@@ -1,5 +1,10 @@
 # Windows shell and WSL2 engines
 
+## Full Windows installation
+
+Download the [0.1.3 full Windows installer](https://github.com/walladanger/llama-cpp-webui-wrapper/releases/download/v0.1.3/LlamaCpp-Router-0.1.3-Windows-x64-Setup.exe), run Setup and open Router from its shortcut. It supports fresh installs and upgrades, includes the pinned llama.cpp/CUDA and benchmark files, and preserves your models and settings. See [release details](../docs/releases/0.1.3/README.md).
+
+
 The Windows package opens the stock llama.cpp web UI as its main window on port 18080. Its sidebar has separate vLLM, TensorRT-LLM, and llama-bench pages. Those pages use the local desktop bridge to edit settings, start or stop WSL2 services, inspect status and logs, install a missing llama-bench, and run a GGUF benchmark. The browser view shows the same pages, but engine controls require the Windows app. The window refuses to connect to a server started by another app. API clients connect directly to the running engine. The companion `llama-engine-manager.exe` provides the same engine and benchmark commands for scripts.
 
 The main window has a custom title bar. The Models page can select multiple external GGUF folders without moving files, choose the Hugging Face download cache, load or unload models, and start a GGUF download from a Hugging Face repository. Selected folders are saved in `portable-data/config/app-paths.json` and exposed through a generated `external-models.ini` preset. The Logs page can choose a log folder, open it in File Explorer, read local log files, and view the vLLM or TensorRT-LLM service journal. Cache and log folder changes take effect after restarting the app.
@@ -45,7 +50,7 @@ The official pinned llama.cpp package normally includes `llama-bench.exe`. If it
 .\llama-engine-manager.exe bench run C:\path\to\model.gguf CUDA2
 ```
 
-The benchmark runs 512 prompt tokens and 128 generated tokens, repeats each test three times, and saves the Markdown output to `portable-data\logs\llama-bench.md`. It measures llama.cpp itself; it does not benchmark the vLLM or TensorRT-LLM API. If TensorRT-LLM is missing in the configured WSL distro, the dashboard displays an installation guide prompt on startup. It does not install TensorRT-LLM automatically because the required system packages and CUDA toolkit depend on the WSL environment.
+The benchmark runs 512 prompt tokens and 128 generated tokens, repeats each test three times, and saves the Markdown output to `portable-data\logs\llama-bench.md`. It measures llama.cpp itself; it does not benchmark the vLLM or TensorRT-LLM API. If TensorRT-LLM is missing in the configured WSL distro, the dashboard displays an installation guide prompt on startup. The TensorRT page now offers guided automatic setup. It checks existing Linux installations and can reuse Docker Desktop, or install native prerequisites on supported Ubuntu versions. Downloads and system changes start only when requested from that setup page.
 
 ## Updating llama.cpp
 

@@ -1,12 +1,15 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod benchmark;
+mod gguf_meta;
 mod gpu;
 mod launch;
 mod local_files;
 mod process_probe;
 mod runtime_capabilities;
 mod settings;
+mod trt_setup;
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -180,6 +183,13 @@ fn start(window: WebviewWindow) {
     let url = format!("http://127.0.0.1:{port}");
 
     std::thread::spawn(move || {
+        let trace = root.join("portable-data/logs/shell-startup.log");
+        let record = |message: &str| {
+            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&trace) {
+                let _ = writeln!(file, "{message}");
+            }
+        };
+        record("Starting desktop navigation");
         let owned = app
             .state::<Server>()
             .0
@@ -187,6 +197,10 @@ fn start(window: WebviewWindow) {
             .unwrap()
             .as_mut()
             .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
+        record(&format!(
+            "Initial health: {}, owned: {owned}",
+            healthy(port)
+        ));
         if healthy(port) && !owned {
             return show_status(
                 &window,
@@ -197,7 +211,10 @@ fn start(window: WebviewWindow) {
         if !healthy(port) {
             if !owned {
                 match spawn_server(&root, port) {
-                    Ok(child) => *app.state::<Server>().0.lock().unwrap() = Some(child),
+                    Ok(child) => {
+                        *app.state::<Server>().0.lock().unwrap() = Some(child);
+                        record("Spawned llama-server");
+                    }
                     Err(e) => return show_status(&window, &e, true),
                 }
             }
@@ -208,6 +225,7 @@ fn start(window: WebviewWindow) {
             let started = Instant::now();
             loop {
                 if healthy(port) {
+                    record("Health check passed");
                     break;
                 }
                 let exited = app
@@ -243,7 +261,14 @@ fn start(window: WebviewWindow) {
         }
         match url.parse() {
             Ok(target) => {
-                let _ = window.navigate(target);
+                record("Navigating to server");
+                match window.navigate(target) {
+                    Ok(()) => record("Navigation request accepted"),
+                    Err(e) => {
+                        record(&format!("Navigation failed: {e}"));
+                        show_status(&window, &format!("Could not open the web UI: {e}"), true);
+                    }
+                }
             }
             Err(e) => show_status(&window, &format!("Bad URL {url}: {e}"), true),
         }
@@ -255,6 +280,78 @@ fn require_dashboard(window: &WebviewWindow) -> Result<(), String> {
         return Err("Engine controls are available only in the local dashboard".into());
     }
     Ok(())
+}
+
+#[tauri::command]
+async fn benchmark_inspect(
+    window: WebviewWindow,
+    action: String,
+) -> Result<serde_json::Value, String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(move || match action.as_str() {
+        "scan" => benchmark::scan(&root_dir()),
+        "history" => benchmark::history(&root_dir()),
+        _ => Err("Unsupported benchmark inspection".into()),
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn benchmark_control(
+    window: WebviewWindow,
+    action: String,
+    state: tauri::State<'_, benchmark::Shared>,
+) -> Result<serde_json::Value, String> {
+    require_dashboard(&window)?;
+    if action == "cancel" {
+        state
+            .cancel
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    } else if action != "status" {
+        return Err("Unsupported benchmark control".into());
+    }
+    Ok(
+        serde_json::json!({"running": state.running.load(std::sync::atomic::Ordering::SeqCst), "stage": state.stage.lock().unwrap().clone()}),
+    )
+}
+
+#[tauri::command]
+async fn benchmark_run(
+    window: WebviewWindow,
+    model: String,
+    device: String,
+    mode: String,
+    compare: bool,
+    state: tauri::State<'_, benchmark::Shared>,
+) -> Result<serde_json::Value, String> {
+    require_dashboard(&window)?;
+    let control = state.inner().clone();
+    if control
+        .running
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_err()
+    {
+        return Err("A benchmark is already running".into());
+    }
+    control
+        .cancel
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    let running = control.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        benchmark::run(&root_dir(), &model, &device, &mode, compare, &running)
+    })
+    .await;
+    control
+        .running
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    *control.stage.lock().unwrap() = "Idle".into();
+    result.map_err(|e| e.to_string())?
 }
 
 fn manager_exe() -> Result<PathBuf, String> {
@@ -333,6 +430,24 @@ async fn manager_call(
         .await
         .map_err(|e| e.to_string())?;
     }
+    if engine == "trtllm"
+        && [
+            "setup-check",
+            "install",
+            "install-status",
+            "install-cancel",
+            "install-wsl",
+            "open-ubuntu",
+        ]
+        .contains(&action.as_str())
+    {
+        return tauri::async_runtime::spawn_blocking(move || trt_setup::call(&root_dir(), &action))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if engine == "trtllm" && ["start", "stop"].contains(&action.as_str()) && trt_setup::running() {
+        return Err("Wait for TensorRT setup to finish before changing the service".into());
+    }
     let allowed = match engine.as_str() {
         "vllm" => ["start", "status", "stop", "logs"].contains(&action.as_str()),
         "trtllm" => ["installed", "start", "status", "stop", "logs"].contains(&action.as_str()),
@@ -370,6 +485,12 @@ async fn manager_call(
         let mut command = Command::new(manager_exe()?);
         command.args(&args).env("LLAMA_WEBUI_ROOT", root);
         no_console(&mut command);
+        if args.first().map(String::as_str) == Some("trtllm") {
+            let seconds = if action == "start" { 660 } else { 45 };
+            let out = process_probe::capture(command, Duration::from_secs(seconds), 256 * 1024)?;
+            let text = format!("{}{}", out.stdout, out.stderr).trim().to_owned();
+            return if out.success { Ok(text) } else { Err(text) };
+        }
         let output = command.output().map_err(|e| e.to_string())?;
         let text = format!(
             "{}{}",
@@ -395,6 +516,28 @@ fn list_models(window: WebviewWindow) -> Result<Vec<String>, String> {
         .iter()
         .map(|path| path.to_string_lossy().into_owned())
         .collect())
+}
+
+#[tauri::command]
+async fn list_model_details(
+    window: WebviewWindow,
+) -> Result<Vec<local_files::ModelDetail>, String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| local_files::model_details(&root_dir()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn rescan_model_folders(window: WebviewWindow) -> Result<(), String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| {
+        let root = root_dir();
+        local_files::write_presets(&root, &local_files::load(&root)?)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn config_path(engine: &str) -> Result<PathBuf, String> {
@@ -426,6 +569,9 @@ fn save_engine_config(
 ) -> Result<(), String> {
     require_dashboard(&window)?;
     let path = config_path(&engine)?;
+    if engine == "trtllm" && trt_setup::running() {
+        return Err("Wait for TensorRT setup to finish before changing its settings".into());
+    }
     if engine == "llamacpp" {
         let profile = settings::migrate_profile(config)?;
         let revision = profile.revision;
@@ -571,10 +717,16 @@ fn stop(app: &tauri::AppHandle) {
 fn main() {
     let app = tauri::Builder::default()
         .manage(Server(Mutex::new(None)))
+        .manage(benchmark::Shared::default())
         .invoke_handler(tauri::generate_handler![
+            benchmark_inspect,
+            benchmark_control,
+            benchmark_run,
             open_chat,
             manager_call,
             list_models,
+            list_model_details,
+            rescan_model_folders,
             read_engine_config,
             save_engine_config,
             open_trt_guide,

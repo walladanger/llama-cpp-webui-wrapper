@@ -9,11 +9,64 @@ pub struct ProbeOutput {
     pub success: bool,
 }
 
-pub fn capture(
-    mut command: Command,
+pub fn capture(command: Command, timeout: Duration, limit: usize) -> Result<ProbeOutput, String> {
+    capture_cancellable(
+        command,
+        timeout,
+        limit,
+        &std::sync::atomic::AtomicBool::new(false),
+    )
+}
+
+pub fn capture_cancellable(
+    command: Command,
+    timeout: Duration,
+    limit: usize,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<ProbeOutput, String> {
+    capture_inner(command, timeout, limit, cancel, |bytes| {
+        String::from_utf8_lossy(bytes).into_owned()
+    })
+}
+
+/// WSL's Windows CLI can emit UTF-16 while Linux commands emit UTF-8.
+pub fn capture_wsl(
+    command: Command,
     timeout: Duration,
     limit: usize,
 ) -> Result<ProbeOutput, String> {
+    capture_inner(
+        command,
+        timeout,
+        limit,
+        &std::sync::atomic::AtomicBool::new(false),
+        decode_wsl,
+    )
+}
+fn decode_wsl(bytes: &[u8]) -> String {
+    if bytes.starts_with(&[0xff, 0xfe]) || bytes.contains(&0) {
+        let body = bytes.strip_prefix(&[0xff, 0xfe]).unwrap_or(bytes);
+        let units: Vec<u16> = body
+            .chunks_exact(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(bytes)
+            .trim_start_matches('\u{feff}')
+            .to_owned()
+    }
+}
+fn capture_inner(
+    mut command: Command,
+    timeout: Duration,
+    limit: usize,
+    cancel: &std::sync::atomic::AtomicBool,
+    decode: fn(&[u8]) -> String,
+) -> Result<ProbeOutput, String> {
+    if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Benchmark cancelled".into());
+    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -51,6 +104,9 @@ pub fn capture(
     let mut stderr = None;
     let mut status = None;
     let result = loop {
+        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            break Err("Benchmark cancelled; partial test discarded".into());
+        }
         while let Ok((err, bytes)) = rx.try_recv() {
             match bytes {
                 Ok(bytes) => {
@@ -74,8 +130,8 @@ pub fn capture(
         }
         if let (Some(out), Some(err), Some(status)) = (&stdout, &stderr, status) {
             break Ok(ProbeOutput {
-                stdout: String::from_utf8_lossy(out).into(),
-                stderr: String::from_utf8_lossy(err).into(),
+                stdout: decode(out),
+                stderr: decode(err),
                 success: status.success(),
             });
         }
@@ -94,6 +150,17 @@ pub fn capture(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn decodes_wsl_windows_and_linux_output_without_losing_names() {
+        let sample = "Ubuntu\r\nUbuntu 日本語\r\n";
+        let encoded: Vec<u8> = sample.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert_eq!(decode_wsl(&encoded), sample);
+        assert_eq!(decode_wsl(&[vec![0xff, 0xfe], encoded].concat()), sample);
+        assert_eq!(
+            decode_wsl("GPU ready — UTF-8".as_bytes()),
+            "GPU ready — UTF-8"
+        );
+    }
     #[test]
     fn probe_fixture() {
         match std::env::var("ROUTER_PROBE_FIXTURE").as_deref() {
@@ -138,5 +205,20 @@ mod tests {
                 .unwrap_err()
                 .contains("output limit")
         );
+    }
+
+    #[test]
+    fn cancellation_kills_and_reaps_the_owned_child() {
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let trigger = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(80));
+            trigger.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        let start = Instant::now();
+        let error = capture_cancellable(command("sleep"), Duration::from_secs(5), 1024, &cancel)
+            .unwrap_err();
+        assert!(error.contains("cancelled"));
+        assert!(start.elapsed() < Duration::from_secs(2));
     }
 }

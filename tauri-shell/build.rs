@@ -1,9 +1,14 @@
 fn main() {
     let attributes =
         tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
+            "benchmark_inspect",
+            "benchmark_control",
+            "benchmark_run",
             "open_chat",
             "manager_call",
             "list_models",
+            "list_model_details",
+            "rescan_model_folders",
             "read_engine_config",
             "save_engine_config",
             "open_trt_guide",

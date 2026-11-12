@@ -1,3 +1,7 @@
 /target/
 /gen/
 /dist/
+
+/installer/payload*/
+/installer/generated*/
+/updater/generated/

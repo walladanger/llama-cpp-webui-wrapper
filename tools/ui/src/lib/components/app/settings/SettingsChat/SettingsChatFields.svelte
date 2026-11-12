@@ -7,12 +7,7 @@
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import {
-		ICON_CLASS_DEFAULT,
-		SETTING_CONFIG_DEFAULT,
-		SETTING_CONFIG_INFO,
-		SETTINGS_KEYS
-	} from '$lib/constants';
+	import { ICON_CLASS_DEFAULT, SETTING_CONFIG_INFO, SETTING_CONFIG_DEFAULT, SETTINGS_KEYS } from '$lib/constants';
 	import { SettingsFieldType } from '$lib/enums/settings.enums';
 	import { modelsStore, serverStore, settingsStore } from '$lib/stores';
 	import { normalizeFloatingPoint } from '$lib/utils/precision';
@@ -49,14 +44,7 @@
 
 {#each fields as field (field.key)}
 	{#if !field.dependsOn || Boolean(localConfig[field.dependsOn])}
-		<div
-			class={field.dependsOn ? 'space-y-2 pl-6' : 'space-y-2'}
-			data-help-default={String(SETTING_CONFIG_DEFAULT[field.key] ?? '')}
-			data-help-key={field.key}
-			data-help-options={JSON.stringify(field.options || [])}
-			data-help-summary={field.help || SETTING_CONFIG_INFO[field.key]}
-			data-help-title={field.label}
-		>
+		<div data-help-key={field.key} data-help-title={field.label} data-help-summary={field.help || SETTING_CONFIG_INFO[field.key]} data-help-default={String(SETTING_CONFIG_DEFAULT[field.key] ?? '')} data-help-options={JSON.stringify(field.options || [])} class={field.dependsOn ? 'space-y-2 pl-6' : 'space-y-2'}>
 			{#if field.type === SettingsFieldType.INPUT}
 				{@const currentValue = String(localConfig[field.key] ?? '')}
 				{@const serverDefault = currentModelParams[field.key]}

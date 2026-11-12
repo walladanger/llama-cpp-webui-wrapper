@@ -1,3 +1,4 @@
+use crate::gguf_meta;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::{self, File};
@@ -16,6 +17,15 @@ pub struct AppPaths {
 pub struct LogFile {
     pub name: String,
     pub bytes: u64,
+}
+
+#[derive(Serialize)]
+pub struct ModelDetail {
+    pub id: String,
+    pub file_name: String,
+    pub path: String,
+    pub quantization: Option<String>,
+    pub bytes: Option<u64>,
 }
 
 fn config_file(root: &Path) -> PathBuf {
@@ -99,36 +109,60 @@ fn preset_path(root: &Path) -> PathBuf {
     root.join("portable-data/config/external-models.ini")
 }
 
-pub fn write_presets(root: &Path, paths: &AppPaths) -> Result<PathBuf, String> {
+fn external_files(paths: &AppPaths) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     for folder in &paths.model_folders {
         gguf_files(Path::new(folder), 0, &mut files)?;
     }
     files.sort();
+    Ok(files)
+}
+
+fn preset_id(index: usize, file: &Path) -> String {
+    let name = file.file_stem().unwrap_or_default().to_string_lossy();
+    let safe: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).collect();
+    format!("external-{}-{}", index + 1, safe)
+}
+
+fn detail(id: String, file: &Path) -> ModelDetail {
+    ModelDetail {
+        id,
+        file_name: file.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+        path: file.to_string_lossy().into_owned(),
+        quantization: gguf_meta::quantization(file).map(str::to_owned),
+        bytes: gguf_meta::total_size(file).ok(),
+    }
+}
+
+pub fn model_details(root: &Path) -> Result<Vec<ModelDetail>, String> {
+    let paths = load(root)?;
+    let mut details = Vec::new();
+    let built_in = root.join("portable-data/models");
+    if built_in.is_dir() {
+        let mut files = Vec::new();
+        gguf_files(&built_in, 0, &mut files)?;
+        for file in files {
+            let id = file.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+            details.push(detail(id, &file));
+        }
+    }
+    for (index, file) in external_files(&paths)?.iter().enumerate() {
+        details.push(detail(preset_id(index, file), file));
+    }
+    Ok(details)
+}
+
+pub fn write_presets(root: &Path, paths: &AppPaths) -> Result<PathBuf, String> {
+    let files = external_files(paths)?;
     let path = preset_path(root);
     let mut ini = String::from("version = 1\n");
     for (index, file) in files.iter().enumerate() {
-        let name = file.file_stem().unwrap_or_default().to_string_lossy();
-        let safe: String = name
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '-'
-                }
-            })
-            .collect();
+        let id = preset_id(index, file);
         let file = file.to_string_lossy();
         if file.contains('\n') || file.contains('\r') {
             return Err("Model path contains a line break".into());
         }
-        ini.push_str(&format!(
-            "\n[external-{}-{}]\nmodel = {}\n",
-            index + 1,
-            safe,
-            file
-        ));
+        ini.push_str(&format!("\n[{id}]\nmodel = {}\n", file));
     }
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     fs::write(&path, ini).map_err(|e| format!("{}: {e}", path.display()))?;

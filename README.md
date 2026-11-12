@@ -36,6 +36,16 @@ from the `portable-data` directory.
 
 ## Quick start
 
+### Full installer (Windows x64 CUDA)
+
+1. Download [LlamaCpp-Router-0.1.3-Windows-x64-Setup.exe](https://github.com/walladanger/llama-cpp-webui-wrapper/releases/download/v0.1.3/LlamaCpp-Router-0.1.3-Windows-x64-Setup.exe).
+2. Run Setup and keep the existing folder when upgrading.
+3. Open Router from the shortcut, then add or download a model.
+
+The full installer includes the desktop app, pinned llama.cpp/CUDA runtime, llama-bench and app-local VC runtime dependencies. Setup checks WebView2 and installs it if missing. Models and optional WSL/TensorRT downloads are separate. Models, configuration, cache and logs are preserved during upgrades and uninstall. This build is unsigned.
+
+See the [release notes and validation limits](docs/releases/0.1.3/README.md). Full installers are the primary Windows distribution; the portable ZIP remains available.
+
 ### Portable app (Windows x64 CUDA)
 
 1. Download `Llama-WebUI-windows-x64-cuda.zip` from the

@@ -116,7 +116,7 @@ fn wsl(cfg: &VllmConfig, args: &[&str]) -> Result<Output, String> {
     Command::new("wsl.exe")
         .arg("-d")
         .arg(&cfg.distro)
-        .arg("--")
+        .arg("--exec")
         .args(args)
         .output()
         .map_err(|e| format!("Cannot run wsl.exe: {e}"))
@@ -124,7 +124,7 @@ fn wsl(cfg: &VllmConfig, args: &[&str]) -> Result<Output, String> {
 
 fn wsl_distro(distro: &str, args: &[&str]) -> Result<Output, String> {
     Command::new("wsl.exe")
-        .args(["-d", distro, "--"])
+        .args(["-d", distro, "--exec"])
         .args(args)
         .output()
         .map_err(|e| format!("Cannot run WSL distro {distro}: {e}"))
@@ -329,6 +329,12 @@ fn trt_status(cfg: &TrtllmConfig) -> Result<(), String> {
 
 fn trt_stop(cfg: &TrtllmConfig) -> Result<(), String> {
     if !trt_active(cfg)? {
+        if cfg.executable == "/opt/llama-router/trtllm/bin/trtllm-serve" {
+            let cleanup = wsl_distro(&cfg.distro, &[&cfg.executable, "--router-stop"])?;
+            if !cleanup.status.success() {
+                return Err(output_text(&cleanup));
+            }
+        }
         println!("{TRT_UNIT} is not active");
         return Ok(());
     }
@@ -337,6 +343,12 @@ fn trt_stop(cfg: &TrtllmConfig) -> Result<(), String> {
         return Err(output_text(&result));
     }
     println!("Stopped {TRT_UNIT}");
+    if cfg.executable == "/opt/llama-router/trtllm/bin/trtllm-serve" {
+        let cleanup = wsl_distro(&cfg.distro, &[&cfg.executable, "--router-stop"])?;
+        if !cleanup.status.success() {
+            return Err(output_text(&cleanup));
+        }
+    }
     Ok(())
 }
 

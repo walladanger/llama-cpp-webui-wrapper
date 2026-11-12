@@ -22,18 +22,6 @@ import { getAuthHeaders } from '$lib/utils/api-headers';
 export class ModelsService {
 	private static readonly SSE_RECONNECT_MS = 1000;
 
-	static async downloadFromHuggingFace(model: string): Promise<{ success: boolean }> {
-		return apiPost<{ success: boolean }>('/models', { model });
-	}
-
-	/**
-	 *
-	 *
-	 * Load/Unload
-	 *
-	 *
-	 */
-
 	/**
 	 * Check if a model is loaded based on its metadata.
 	 *
@@ -43,6 +31,14 @@ export class ModelsService {
 	static isModelLoaded(model: ApiModelDataEntry): boolean {
 		return model.status.value === ServerModelStatus.LOADED;
 	}
+
+	/**
+	 *
+	 *
+	 * Load/Unload
+	 *
+	 *
+	 */
 
 	/**
 	 * Check if a model is currently loading.
@@ -73,6 +69,14 @@ export class ModelsService {
 	 */
 	static async listRouter(): Promise<ApiRouterModelsListResponse> {
 		return apiFetch<ApiRouterModelsListResponse>(API_MODELS.LIST);
+	}
+
+	static async reloadRouter(): Promise<ApiRouterModelsListResponse> {
+		return apiFetch<ApiRouterModelsListResponse>(`${API_MODELS.LIST}?reload=1`);
+	}
+
+	static async downloadFromHuggingFace(model: string): Promise<{ success: boolean }> {
+		return apiPost<{ success: boolean }>('/models', { model });
 	}
 
 	/**
@@ -216,10 +220,6 @@ export class ModelsService {
 		return result;
 	}
 
-	static async reloadRouter(): Promise<ApiRouterModelsListResponse> {
-		return apiFetch<ApiRouterModelsListResponse>(`${API_MODELS.LIST}?reload=1`);
-	}
-
 	/**
 	 * Unload a model (ROUTER mode only).
 	 * Sends POST request to `/models/unload`. Note: the endpoint returns success
@@ -240,7 +240,8 @@ export class ModelsService {
 	 */
 	static async watchModelEvents(
 		signal: AbortSignal,
-		onEvent: (event: ApiModelsSseEvent) => void
+		onEvent: (event: ApiModelsSseEvent) => void,
+		onConnectionChange?: (live: boolean) => void
 	): Promise<void> {
 		const decoder = new TextDecoder();
 
@@ -251,7 +252,8 @@ export class ModelsService {
 					signal
 				});
 
-				if (response.ok && response.body) {
+				if (response.ok && response.body && response.headers.get('content-type')?.includes('text/event-stream')) {
+					onConnectionChange?.(true);
 					const reader = response.body.getReader();
 
 					let buffer = '';
@@ -276,6 +278,8 @@ export class ModelsService {
 				}
 			} catch {
 				// network drop or abort falls through to the reconnect delay
+			} finally {
+				if (!signal.aborted) onConnectionChange?.(false);
 			}
 
 			if (signal.aborted) return;

@@ -9,17 +9,17 @@ export const URL_PARAMS = {
 } as const;
 
 export const ROUTES = {
+	MODELS: '#/models',
+	LOGS: '#/logs',
 	BENCH: '#/llama-bench',
+	TRTLLM: '#/tensorrt-llm',
+	VLLM: '#/vllm',
 	/** Chat base — for dynamic chat URLs use RouterService. */
 	CHAT: '#/chat',
-	LOGS: '#/logs',
 	/** MCP servers. */
 	MCP_SERVERS: '#/mcp-servers',
-	MODELS: '#/models',
 	/** Search — mobile-only full-page conversation search. */
 	SEARCH: '#/search',
 	/** Root — start of the app. */
-	START: '#/',
-	TRTLLM: '#/tensorrt-llm',
-	VLLM: '#/vllm'
+	START: '#/'
 } as const;

@@ -21,33 +21,6 @@
 #router-help-preview[hidden] {
 	display: none !important;
 }
-#router-help-trigger {
-	position: fixed;
-	display: grid;
-	place-items: center;
-	width: 27px;
-	height: 27px;
-	min-width: 27px;
-	margin: 0;
-	padding: 0;
-	border: 1px solid #ffffff80;
-	border-radius: 50%;
-	background: rgba(0, 0, 0, 0.78);
-	color: #fff;
-	box-shadow: 0 3px 14px #0008;
-	font:
-		600 15px/1 'Segoe UI',
-		sans-serif;
-	cursor: help;
-	pointer-events: auto;
-	backdrop-filter: blur(16px);
-	-webkit-backdrop-filter: blur(16px);
-}
-#router-help-trigger:hover {
-	background: rgba(28, 28, 28, 0.9);
-	border-color: #fff;
-}
-#router-help-trigger:focus-visible,
 #router-help-document button:focus-visible,
 #router-help-document a:focus-visible {
 	outline: 2px solid #ffd28d;
@@ -56,39 +29,111 @@
 #router-help-preview {
 	position: fixed;
 	box-sizing: border-box;
-	max-height: min(390px, 65vh);
-	overflow: auto;
-	padding: 16px 18px;
+	display: flex;
+	flex-direction: column;
+	min-width: min(280px, calc(100vw - 24px));
+	min-height: min(190px, calc(100vh - 60px));
+	max-width: calc(100vw - 24px);
+	max-height: calc(100vh - 60px);
+	overflow: hidden;
+	padding: 0;
 	border: 1px solid #ffffff30;
 	border-radius: 12px;
-	background: rgba(0, 0, 0, 0.82);
+	background: rgba(0, 0, 0, 0.86);
 	color: #eee;
-	box-shadow: 0 16px 50px #0008;
+	box-shadow: 0 12px 34px #0007;
 	backdrop-filter: blur(22px);
 	-webkit-backdrop-filter: blur(22px);
 	pointer-events: auto;
+	font: 13px/1.55 'Segoe UI', system-ui, sans-serif;
+	color-scheme: dark;
+	isolation: isolate;
 }
-#router-help-preview strong {
-	display: block;
-	font-size: 15px;
-	color: #fff;
+#router-help-preview .router-help-panel-header {
+	display: flex;
+	align-items: flex-start;
+	flex: none;
+	gap: 8px;
+	padding: 9px 10px 8px 13px;
+	border-bottom: 1px solid #ffffff1f;
 }
-#router-help-preview p {
-	margin: 7px 0;
-	color: #dedede;
-}
-#router-help-preview ul {
-	margin: 10px 0;
-	padding-left: 18px;
-}
-#router-help-preview li {
-	margin: 6px 0;
-	font-size: 12px;
+#router-help-preview button {
+	position: static;
+	appearance: none;
+	box-sizing: border-box;
+	width: auto;
+	min-height: 26px;
+	margin: 0;
+	padding: 3px 6px;
+	border: 1px solid #ffffff26;
+	border-radius: 5px;
+	background: #ffffff08;
 	color: #ddd;
+	font: 11px/1.4 'Segoe UI', system-ui, sans-serif;
+	cursor: pointer;
 }
-#router-help-preview small {
-	color: #bfbfbf;
+#router-help-preview button:hover { background: #ffffff1a; color: #fff; }
+#router-help-preview button:focus-visible, #router-help-preview .router-help-panel-content:focus-visible {
+	outline: 2px solid #ffd28d;
+	outline-offset: -2px;
+}
+#router-help-preview .router-help-drag {
+	flex: 1;
+	min-width: 0;
+	padding: 3px 0;
+	border: 0;
+	background: transparent;
+	text-align: left;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.35;
+	color: #fff;
+	cursor: grab;
+	touch-action: none;
+	user-select: none;
+}
+#router-help-preview .router-help-drag:active { cursor: grabbing; }
+#router-help-preview .router-help-panel-tools { display: flex; flex: none; gap: 4px; }
+#router-help-preview [aria-pressed='true'] { background: #ffffff24; border-color: #ffffff70; }
+#router-help-preview .router-help-panel-content {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
+	padding: 10px 14px;
+	overflow-wrap: anywhere;
+	font-size: 13px;
+}
+#router-help-preview p { margin: 0 0 10px; color: #dedede; font-size: 13px; }
+#router-help-preview h3 { margin: 12px 0 6px; color: #fff; font-size: 13px; font-weight: 600; }
+#router-help-preview ul, #router-help-preview ol { margin: 6px 0 10px; padding-left: 18px; }
+#router-help-preview ul { list-style: disc; }
+#router-help-preview ol { list-style: decimal; }
+#router-help-preview li { margin: 6px 0; color: #ddd; font-size: 13px; }
+#router-help-preview strong { color: #fff; font-size: inherit; font-weight: 600; }
+#router-help-preview .router-help-panel-footer {
+	flex: none;
+	padding: 7px 28px 8px 13px;
+	border-top: 1px solid #ffffff1a;
 	font-size: 11px;
+	line-height: 1.35;
+	color: #bfbfbf;
+	pointer-events: none;
+}
+#router-help-preview .router-help-resize {
+	position: absolute;
+	right: 1px;
+	bottom: 1px;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #bbb;
+	font-size: 16px;
+	cursor: nwse-resize;
+	touch-action: none;
+	user-select: none;
 }
 #router-help-document {
 	box-sizing: border-box;
@@ -288,16 +333,14 @@
 }
 @media (prefers-reduced-transparency: reduce) {
 	#router-help-preview,
-	#router-help-document,
-	#router-help-trigger {
+	#router-help-document {
 		background: #080808;
 		backdrop-filter: none;
 	}
 }
 @media (forced-colors: active) {
 	#router-help-preview,
-	#router-help-document,
-	#router-help-trigger {
+	#router-help-document {
 		background: Canvas;
 		color: CanvasText;
 		border: 1px solid CanvasText;

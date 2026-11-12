@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-benchmark-run"
+description = "Enables the benchmark_run command without any pre-configured scope."
+commands.allow = ["benchmark_run"]
+
+[[permission]]
+identifier = "deny-benchmark-run"
+description = "Denies the benchmark_run command without any pre-configured scope."
+commands.deny = ["benchmark_run"]
