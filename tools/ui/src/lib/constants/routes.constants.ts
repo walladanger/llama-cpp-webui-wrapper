@@ -9,6 +9,11 @@ export const URL_PARAMS = {
 } as const;
 
 export const ROUTES = {
+	MODELS: '#/models',
+	LOGS: '#/logs',
+	BENCH: '#/llama-bench',
+	TRTLLM: '#/tensorrt-llm',
+	VLLM: '#/vllm',
 	/** Chat base — for dynamic chat URLs use RouterService. */
 	CHAT: '#/chat',
 	/** MCP servers. */

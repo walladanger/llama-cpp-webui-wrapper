@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-rescan-model-folders"
+description = "Enables the rescan_model_folders command without any pre-configured scope."
+commands.allow = ["rescan_model_folders"]
+
+[[permission]]
+identifier = "deny-rescan-model-folders"
+description = "Denies the rescan_model_folders command without any pre-configured scope."
+commands.deny = ["rescan_model_folders"]

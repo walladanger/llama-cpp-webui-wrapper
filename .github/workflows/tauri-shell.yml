@@ -27,7 +27,7 @@ jobs:
         run: cargo test
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --bins
 
       - name: Package portable app
         shell: pwsh
@@ -35,10 +35,38 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./package-portable.ps1
 
+      - name: Prepare installer compiler
+        shell: pwsh
+        run: |
+          $compiler = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if ($compiler) {
+            $compilerPath = $compiler.Source
+          } else {
+            choco install nsis --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed" }
+            $compilerPath = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          }
+          if (-not (Test-Path -LiteralPath $compilerPath)) { throw "NSIS compiler not found" }
+          "ROUTER_MAKENSIS=$compilerPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build full Windows installer
+        run: node installer/build-installer.cjs
+
+      - name: Validate fresh install and upgrade
+        run: node installer/test-installer.cjs
+
       - uses: actions/upload-artifact@v6
         with:
           name: Llama-WebUI-windows-x64-cuda
           path: tauri-shell/dist/Llama-WebUI-windows-x64-cuda.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: LlamaCpp-Router-Windows-x64-Setup
+          path: |
+            artifacts/LlamaCpp-Router-*-Windows-x64-Setup.exe
+            artifacts/LlamaCpp-Router-*-Windows-x64-Setup.exe.sha256
           if-no-files-found: error
 
       # Rolling release on main so the zip has a permanent download link.
@@ -50,7 +78,7 @@ jobs:
         run: |
           $tag = "webui-latest"
           $llama = (Get-Content dist/llama-cpp-tag.txt) -replace '^tag=', ''
-          $notes = "Portable llama.cpp WebUI for Windows x64 (NVIDIA CUDA). Built from ${{ github.sha }} with llama.cpp $llama. Extract, put .gguf files in portable-data\models, run llama-webui.exe."
+          $notes = "Full Windows installer and portable llama.cpp WebUI for Windows x64 (NVIDIA CUDA). Built from ${{ github.sha }} with llama.cpp $llama. Extract, put .gguf files in portable-data\models, run llama-webui.exe."
           gh release view $tag --repo ${{ github.repository }} *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo ${{ github.repository }} --title "llama.cpp WebUI (latest)" --notes $notes --target ${{ github.sha }} --latest
@@ -59,3 +87,5 @@ jobs:
             gh release edit $tag --repo ${{ github.repository }} --notes $notes
           }
           gh release upload $tag dist/Llama-WebUI-windows-x64-cuda.zip --repo ${{ github.repository }} --clobber
+          $version = (Get-Content tauri.conf.json | ConvertFrom-Json).version
+          gh release upload $tag "../artifacts/LlamaCpp-Router-$version-Windows-x64-Setup.exe" "../artifacts/LlamaCpp-Router-$version-Windows-x64-Setup.exe.sha256" --repo ${{ github.repository }} --clobber

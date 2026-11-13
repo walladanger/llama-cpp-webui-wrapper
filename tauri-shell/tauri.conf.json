@@ -1,18 +1,21 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "llama.cpp WebUI",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "identifier": "com.walladanger.llama-webui",
   "build": {
     "frontendDist": "ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "title": "llama.cpp WebUI",
-        "width": 1280,
-        "height": 860,
+        "title": "llama.cpp",
+        "url": "chat.html",
+        "decorations": false,
+        "width": 1160,
+        "height": 820,
         "minWidth": 640,
         "minHeight": 480,
         "center": true
@@ -24,7 +27,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/512x512.png", "icons/icon.ico"]
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/512x512.png",
+      "icons/icon.ico"
+    ]
   }
 }

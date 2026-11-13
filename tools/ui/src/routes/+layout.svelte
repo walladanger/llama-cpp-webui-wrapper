@@ -5,6 +5,7 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import { SidebarNavigation } from '$lib/components/app';
+	import DesktopTitleBar from '$lib/components/app/DesktopTitleBar.svelte';
 	import { PwaMetaTags, PwaRefreshAlert } from '$lib/components/pwa';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import {
@@ -314,6 +315,7 @@
 <svelte:document onvisibilitychange={handleVisibilityChange} />
 
 <Tooltip.Provider delayDuration={TOOLTIP_DELAY_DURATION}>
+	<DesktopTitleBar />
 	<div class="flex flex-col md:flex-row">
 		<SidebarNavigation
 			onSearchClick={() => {

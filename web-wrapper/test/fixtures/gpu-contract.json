@@ -1,0 +1,908 @@
+[
+  {
+    "name": "explicit context survives fitting",
+    "settings": {
+      "fit": true,
+      "ctx_size": 8192
+    },
+    "flags": {
+      "--ctx-size": "8192",
+      "--fit": "on"
+    }
+  },
+  {
+    "name": "f32 V cache is preserved with attention off",
+    "settings": {
+      "flash_attn": "off",
+      "cache_type_v": "f32"
+    },
+    "flags": {
+      "--cache-type-v": "f32"
+    }
+  },
+  {
+    "name": "bf16 V cache is preserved with attention off",
+    "settings": {
+      "flash_attn": "off",
+      "cache_type_v": "bf16"
+    },
+    "flags": {
+      "--cache-type-v": "bf16"
+    }
+  },
+  {
+    "name": "tensor requires manual fitting",
+    "settings": {
+      "split_mode": "tensor",
+      "fit": true,
+      "flash_attn": "on",
+      "ctx_size": 4096
+    },
+    "error": "Tensor mode requires fit off"
+  },
+  {
+    "name": "tensor requires attention on",
+    "settings": {
+      "split_mode": "tensor",
+      "fit": false,
+      "flash_attn": "off",
+      "ctx_size": 4096
+    },
+    "error": "Tensor mode requires Flash Attention on"
+  },
+  {
+    "name": "tensor requires explicit context",
+    "settings": {
+      "split_mode": "tensor",
+      "fit": false,
+      "flash_attn": "on"
+    },
+    "error": "Tensor mode requires an explicit positive context"
+  },
+  {
+    "name": "tensor rejects quantized K",
+    "settings": {
+      "split_mode": "tensor",
+      "fit": false,
+      "flash_attn": "on",
+      "ctx_size": 4096,
+      "cache_type_k": "q8_0"
+    },
+    "error": "Tensor mode requires f32, f16 or bf16 K/V caches"
+  },
+  {
+    "name": "tensor rejects quantized V",
+    "settings": {
+      "split_mode": "tensor",
+      "fit": false,
+      "flash_attn": "on",
+      "ctx_size": 4096,
+      "cache_type_v": "q4_0"
+    },
+    "error": "Tensor mode requires f32, f16 or bf16 K/V caches"
+  },
+  {
+    "name": "quantized V cannot silently disappear",
+    "settings": {
+      "flash_attn": "off",
+      "cache_type_v": "q8_0"
+    },
+    "error": "Quantized V cache requires Flash Attention"
+  },
+  {
+    "name": "valid tensor request",
+    "settings": {
+      "split_mode": "tensor",
+      "fit": false,
+      "flash_attn": "on",
+      "ctx_size": 4096,
+      "cache_type_k": "f16",
+      "cache_type_v": "bf16"
+    },
+    "flags": {
+      "--split-mode": "tensor",
+      "--ctx-size": "4096",
+      "--cache-type-v": "bf16"
+    }
+  },
+  {
+    "name": "unknown K cache rejected",
+    "settings": {
+      "cache_type_k": "typo"
+    },
+    "error": "Invalid K cache type"
+  },
+  {
+    "name": "unknown V cache rejected",
+    "settings": {
+      "cache_type_v": "typo"
+    },
+    "error": "Invalid V cache type"
+  },
+  {
+    "name": "managed override --host",
+    "settings": {
+      "extra_args": "--host=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --port",
+    "settings": {
+      "extra_args": "--port=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --models-dir",
+    "settings": {
+      "extra_args": "--models-dir=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --models-preset",
+    "settings": {
+      "extra_args": "--models-preset=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --path",
+    "settings": {
+      "extra_args": "--path=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --n-gpu-layers",
+    "settings": {
+      "extra_args": "--n-gpu-layers=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --gpu-layers",
+    "settings": {
+      "extra_args": "--gpu-layers=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -ngl",
+    "settings": {
+      "extra_args": "-ngl=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --threads",
+    "settings": {
+      "extra_args": "--threads=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -t",
+    "settings": {
+      "extra_args": "-t=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --threads-batch",
+    "settings": {
+      "extra_args": "--threads-batch=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -tb",
+    "settings": {
+      "extra_args": "-tb=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --batch-size",
+    "settings": {
+      "extra_args": "--batch-size=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -b",
+    "settings": {
+      "extra_args": "-b=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --ubatch-size",
+    "settings": {
+      "extra_args": "--ubatch-size=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -ub",
+    "settings": {
+      "extra_args": "-ub=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --device",
+    "settings": {
+      "extra_args": "--device=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -dev",
+    "settings": {
+      "extra_args": "-dev=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --split-mode",
+    "settings": {
+      "extra_args": "--split-mode=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -sm",
+    "settings": {
+      "extra_args": "-sm=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --main-gpu",
+    "settings": {
+      "extra_args": "--main-gpu=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -mg",
+    "settings": {
+      "extra_args": "-mg=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --tensor-split",
+    "settings": {
+      "extra_args": "--tensor-split=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -ts",
+    "settings": {
+      "extra_args": "-ts=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --no-kv-offload",
+    "settings": {
+      "extra_args": "--no-kv-offload=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -nkvo",
+    "settings": {
+      "extra_args": "-nkvo=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --kv-offload",
+    "settings": {
+      "extra_args": "--kv-offload=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --flash-attn",
+    "settings": {
+      "extra_args": "--flash-attn=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -fa",
+    "settings": {
+      "extra_args": "-fa=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --context-shift",
+    "settings": {
+      "extra_args": "--context-shift=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --no-context-shift",
+    "settings": {
+      "extra_args": "--no-context-shift=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --cont-batching",
+    "settings": {
+      "extra_args": "--cont-batching=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -cb",
+    "settings": {
+      "extra_args": "-cb=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --no-cont-batching",
+    "settings": {
+      "extra_args": "--no-cont-batching=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -nocb",
+    "settings": {
+      "extra_args": "-nocb=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --no-mmap",
+    "settings": {
+      "extra_args": "--no-mmap=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --mmap",
+    "settings": {
+      "extra_args": "--mmap=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --mlock",
+    "settings": {
+      "extra_args": "--mlock=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --parallel",
+    "settings": {
+      "extra_args": "--parallel=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -np",
+    "settings": {
+      "extra_args": "-np=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --metrics",
+    "settings": {
+      "extra_args": "--metrics=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --ctx-size",
+    "settings": {
+      "extra_args": "--ctx-size=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -c",
+    "settings": {
+      "extra_args": "-c=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --n-predict",
+    "settings": {
+      "extra_args": "--n-predict=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --predict",
+    "settings": {
+      "extra_args": "--predict=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -n",
+    "settings": {
+      "extra_args": "-n=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --cache-type-k",
+    "settings": {
+      "extra_args": "--cache-type-k=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -ctk",
+    "settings": {
+      "extra_args": "-ctk=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --cache-type-v",
+    "settings": {
+      "extra_args": "--cache-type-v=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -ctv",
+    "settings": {
+      "extra_args": "-ctv=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --defrag-thold",
+    "settings": {
+      "extra_args": "--defrag-thold=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -dt",
+    "settings": {
+      "extra_args": "-dt=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --rope-scaling",
+    "settings": {
+      "extra_args": "--rope-scaling=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --rope-scale",
+    "settings": {
+      "extra_args": "--rope-scale=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --rope-freq-base",
+    "settings": {
+      "extra_args": "--rope-freq-base=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --rope-freq-scale",
+    "settings": {
+      "extra_args": "--rope-freq-scale=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --fit",
+    "settings": {
+      "extra_args": "--fit=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -fit",
+    "settings": {
+      "extra_args": "-fit=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --fit-ctx",
+    "settings": {
+      "extra_args": "--fit-ctx=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -fitt",
+    "settings": {
+      "extra_args": "-fitt=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override --fit-target",
+    "settings": {
+      "extra_args": "--fit-target=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "managed override -fitc",
+    "settings": {
+      "extra_args": "-fitc=off"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "malformed quotes rejected",
+    "settings": {
+      "extra_args": "--alias \"unfinished"
+    },
+    "error": "Unclosed quote in extra arguments"
+  },
+  {
+    "name": "all zero split rejected",
+    "settings": {
+      "tensor_split": "0,0"
+    },
+    "error": "Tensor split requires finite nonnegative weights with a positive sum"
+  },
+  {
+    "name": "negative split rejected",
+    "settings": {
+      "tensor_split": "1,-1"
+    },
+    "error": "Tensor split requires finite nonnegative weights with a positive sum"
+  },
+  {
+    "name": "empty split element rejected",
+    "settings": {
+      "tensor_split": "1,,2"
+    },
+    "error": "Tensor split requires finite nonnegative weights with a positive sum"
+  },
+  {
+    "name": "infinite split rejected",
+    "settings": {
+      "tensor_split": "Infinity,1"
+    },
+    "error": "Tensor split requires finite nonnegative weights with a positive sum"
+  },
+  {
+    "name": "unmanaged quoted value preserved",
+    "settings": {
+      "extra_args": "--alias=\"my model\""
+    },
+    "flags": {
+      "--fit": "on"
+    }
+  },
+  {
+    "name": "legacy defaults remain usable",
+    "settings": {},
+    "flags": {
+      "--flash-attn": "auto",
+      "--fit": "on"
+    }
+  },
+  {
+    "name": "ctx_size rejects fractional tokens",
+    "settings": {
+      "ctx_size": 1.5
+    },
+    "error": "Invalid ctx_size"
+  },
+  {
+    "name": "ctx_size rejects nonnumeric text",
+    "settings": {
+      "ctx_size": "nope"
+    },
+    "error": "Invalid ctx_size"
+  },
+  {
+    "name": "threads rejects fractional tokens",
+    "settings": {
+      "threads": 1.5
+    },
+    "error": "Invalid threads"
+  },
+  {
+    "name": "threads rejects nonnumeric text",
+    "settings": {
+      "threads": "nope"
+    },
+    "error": "Invalid threads"
+  },
+  {
+    "name": "threads_batch rejects fractional tokens",
+    "settings": {
+      "threads_batch": 1.5
+    },
+    "error": "Invalid threads_batch"
+  },
+  {
+    "name": "threads_batch rejects nonnumeric text",
+    "settings": {
+      "threads_batch": "nope"
+    },
+    "error": "Invalid threads_batch"
+  },
+  {
+    "name": "batch_size rejects fractional tokens",
+    "settings": {
+      "batch_size": 1.5
+    },
+    "error": "Invalid batch_size"
+  },
+  {
+    "name": "batch_size rejects nonnumeric text",
+    "settings": {
+      "batch_size": "nope"
+    },
+    "error": "Invalid batch_size"
+  },
+  {
+    "name": "ubatch_size rejects fractional tokens",
+    "settings": {
+      "ubatch_size": 1.5
+    },
+    "error": "Invalid ubatch_size"
+  },
+  {
+    "name": "ubatch_size rejects nonnumeric text",
+    "settings": {
+      "ubatch_size": "nope"
+    },
+    "error": "Invalid ubatch_size"
+  },
+  {
+    "name": "parallel rejects fractional tokens",
+    "settings": {
+      "parallel": 1.5
+    },
+    "error": "Invalid parallel"
+  },
+  {
+    "name": "parallel rejects nonnumeric text",
+    "settings": {
+      "parallel": "nope"
+    },
+    "error": "Invalid parallel"
+  },
+  {
+    "name": "main_gpu rejects fractional tokens",
+    "settings": {
+      "main_gpu": 1.5
+    },
+    "error": "Invalid main_gpu"
+  },
+  {
+    "name": "main_gpu rejects nonnumeric text",
+    "settings": {
+      "main_gpu": "nope"
+    },
+    "error": "Invalid main_gpu"
+  },
+  {
+    "name": "concurrent_slots rejects fractional tokens",
+    "settings": {
+      "concurrent_slots": 1.5
+    },
+    "error": "Invalid concurrent_slots"
+  },
+  {
+    "name": "concurrent_slots rejects nonnumeric text",
+    "settings": {
+      "concurrent_slots": "nope"
+    },
+    "error": "Invalid concurrent_slots"
+  },
+  {
+    "name": "n_gpu_layers rejects fractional tokens",
+    "settings": {
+      "n_gpu_layers": 1.5
+    },
+    "error": "Invalid n_gpu_layers"
+  },
+  {
+    "name": "n_gpu_layers rejects nonnumeric text",
+    "settings": {
+      "n_gpu_layers": "nope"
+    },
+    "error": "Invalid n_gpu_layers"
+  },
+  {
+    "name": "n_predict rejects fractional tokens",
+    "settings": {
+      "n_predict": 1.5
+    },
+    "error": "Invalid n_predict"
+  },
+  {
+    "name": "n_predict rejects nonnumeric text",
+    "settings": {
+      "n_predict": "nope"
+    },
+    "error": "Invalid n_predict"
+  },
+  {
+    "name": "fit_ctx rejects fractional tokens",
+    "settings": {
+      "fit_ctx": 1.5
+    },
+    "error": "Invalid fit_ctx"
+  },
+  {
+    "name": "fit_ctx rejects nonnumeric text",
+    "settings": {
+      "fit_ctx": "nope"
+    },
+    "error": "Invalid fit_ctx"
+  },
+  {
+    "name": "fit rejects string boolean",
+    "settings": {
+      "fit": "false"
+    },
+    "error": "Invalid fit"
+  },
+  {
+    "name": "no_kv_offload rejects string boolean",
+    "settings": {
+      "no_kv_offload": "false"
+    },
+    "error": "Invalid no_kv_offload"
+  },
+  {
+    "name": "concurrent_mode rejects string boolean",
+    "settings": {
+      "concurrent_mode": "false"
+    },
+    "error": "Invalid concurrent_mode"
+  },
+  {
+    "name": "expose_metrics rejects string boolean",
+    "settings": {
+      "expose_metrics": "false"
+    },
+    "error": "Invalid expose_metrics"
+  },
+  {
+    "name": "batch relationship validated",
+    "settings": {
+      "batch_size": 128,
+      "ubatch_size": 256
+    },
+    "error": "Microbatch"
+  },
+  {
+    "name": "negative rope rejected",
+    "settings": {
+      "rope_scale": -1
+    },
+    "error": "Invalid rope_scale"
+  },
+  {
+    "name": "unbounded defrag rejected",
+    "settings": {
+      "defrag_thold": 2
+    },
+    "error": "Invalid defrag_thold"
+  },
+  {
+    "name": "unknown placement rejected",
+    "settings": {
+      "gpu_placement": "typo"
+    },
+    "error": "Invalid gpu_placement"
+  },
+  {
+    "name": "unknown rope mode rejected",
+    "settings": {
+      "rope_scaling": "typo"
+    },
+    "error": "Invalid rope_scaling"
+  },
+  {
+    "name": "custom managed env rejected",
+    "settings": {
+      "llamacpp_env": "LLAMA_ARG_DEVICE=CUDA1"
+    },
+    "error": "Environment cannot override"
+  },
+  {
+    "name": "case insensitive env override rejected",
+    "settings": {
+      "llamacpp_env": "llama_arg_port=80"
+    },
+    "error": "Environment cannot override"
+  },
+  {
+    "name": "malformed env rejected",
+    "settings": {
+      "llamacpp_env": "NOT_AN_ASSIGNMENT"
+    },
+    "error": "Invalid environment assignment"
+  },
+  {
+    "name": "negative GPU index rejected",
+    "settings": {
+      "main_gpu": -1
+    },
+    "error": "Invalid main_gpu"
+  },
+  {
+    "name": "zero output budget preserved",
+    "settings": {
+      "n_predict": 0
+    },
+    "flags": {
+      "--n-predict": "0"
+    }
+  },
+  {
+    "name": "until context output budget preserved",
+    "settings": {
+      "n_predict": -2
+    },
+    "flags": {
+      "--n-predict": "-2"
+    }
+  },
+  {
+    "name": "fit zero headroom preserved",
+    "settings": {
+      "fit_target": 0
+    },
+    "flags": {
+      "--fit-target": "0"
+    }
+  },
+  {
+    "name": "managed KV offload short alias rejected",
+    "settings": {
+      "extra_args": "-kvo"
+    },
+    "error": "Extra arguments cannot override managed flag"
+  },
+  {
+    "name": "numeric text compiles to canonical integer arguments",
+    "settings": {
+      "threads": "1e2",
+      "ctx_size": "4.096e3"
+    },
+    "flags": {
+      "--threads": "100",
+      "--ctx-size": "4096"
+    }
+  },
+  {
+    "name": "fitted context numeric text compiles canonically",
+    "settings": {
+      "fit_ctx": "1e3"
+    },
+    "flags": {
+      "--fit-ctx": "1000"
+    }
+  }
+]

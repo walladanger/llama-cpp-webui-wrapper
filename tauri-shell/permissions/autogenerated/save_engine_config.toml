@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-engine-config"
+description = "Enables the save_engine_config command without any pre-configured scope."
+commands.allow = ["save_engine_config"]
+
+[[permission]]
+identifier = "deny-save-engine-config"
+description = "Denies the save_engine_config command without any pre-configured scope."
+commands.deny = ["save_engine_config"]

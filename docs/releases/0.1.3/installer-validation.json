@@ -1,0 +1,11 @@
+{
+  "version": "0.1.3",
+  "fileCount": 151,
+  "freshInstall": "passed",
+  "installedPayloadHashes": "passed",
+  "installedRuntimeVersion": "passed",
+  "upgrade": "passed",
+  "configurationModelsCacheLogsPreserved": "passed",
+  "uninstall": "passed",
+  "scope": "Production setup, silent /VALIDATE mode: identical payload and config handling, skips external registry/shortcut/prerequisite side effects. Interactive setup and clean-machine prerequisite download are not covered."
+}

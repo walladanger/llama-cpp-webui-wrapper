@@ -1,0 +1,7 @@
+{
+  "distro": "Ubuntu",
+  "executable": "trtllm-serve",
+  "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+  "port": 8001,
+  "cuda_visible_devices": ""
+}
