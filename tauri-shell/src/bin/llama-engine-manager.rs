@@ -132,12 +132,7 @@ fn wsl_distro(distro: &str, args: &[&str]) -> Result<Output, String> {
 
 fn keep_wsl_alive(distro: &str, unit: &str) -> Result<(), String> {
     // A foreground WSL client keeps the distro alive until its unit stops.
-    let script = r#"exec 9>"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$1.keepalive"
-flock -n 9
-lock=$?
-[ "$lock" -eq 1 ] && exit 0
-[ "$lock" -eq 0 ] || exit "$lock"
-while systemctl --user is-active --quiet "$1"; do sleep 5; done"#;
+    let script = include_str!("../wsl-keepalive.sh");
     let mut command = Command::new("wsl.exe");
     command
         .args([
@@ -236,9 +231,20 @@ fn trt_installed(cfg: &TrtllmConfig) -> Result<bool, String> {
     Ok(false)
 }
 
+fn unit_is_active(result: &Output) -> Result<bool, String> {
+    let state = String::from_utf8_lossy(&result.stdout);
+    let state = state.trim();
+    let inactive = matches!(result.status.code(), Some(3) | Some(4))
+        && matches!(state, "inactive" | "failed" | "unknown");
+    if !result.status.success() && !inactive {
+        return Err(output_text(result));
+    }
+    Ok(result.status.success() && state == "active")
+}
+
 fn trt_active(cfg: &TrtllmConfig) -> Result<bool, String> {
     let result = wsl_distro(&cfg.distro, &["systemctl", "--user", "is-active", TRT_UNIT])?;
-    Ok(result.status.success() && String::from_utf8_lossy(&result.stdout).trim() == "active")
+    unit_is_active(&result)
 }
 
 fn trt_start(cfg: &TrtllmConfig) -> Result<(), String> {
@@ -512,7 +518,7 @@ fn output_text(output: &Output) -> String {
 
 fn active(cfg: &VllmConfig) -> Result<bool, String> {
     let result = wsl(cfg, &["systemctl", "--user", "is-active", UNIT])?;
-    Ok(result.status.success() && String::from_utf8_lossy(&result.stdout).trim() == "active")
+    unit_is_active(&result)
 }
 
 fn port_open(port: u16) -> bool {
@@ -774,6 +780,23 @@ fn main() {
 #[cfg(test)]
 mod review_tests {
     use super::*;
+    #[test]
+    fn absent_units_are_inactive_and_wsl_errors_are_not_hidden() {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        let code = if cfg!(windows) { 4 } else { 4 << 8 };
+        let mut output = Output {
+            status: std::process::ExitStatus::from_raw(code),
+            stdout: b"inactive\n".to_vec(),
+            stderr: vec![],
+        };
+        assert!(!unit_is_active(&output).unwrap());
+        output.stdout.clear();
+        output.stderr = b"Cannot access WSL distribution".to_vec();
+        assert!(unit_is_active(&output).is_err());
+    }
     #[test]
     fn tensor_rt_accepts_local_directory_names_but_not_repo_basenames() {
         assert!(trt_model_matches("/models/tiny/", "tiny"));

@@ -14,7 +14,7 @@ function Assert($Condition, [string] $Message) {
 function Archive([string] $Name, $Files) {
     $Dir = Join-Path $Fixture ([guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $Dir | Out-Null
-    foreach ($Entry in $Files.GetEnumerator()) { Set-Content -LiteralPath (Join-Path $Dir $Entry.Key) -Value $Entry.Value }
+    foreach ($Entry in $Files.GetEnumerator()) { $File = Join-Path $Dir $Entry.Key; New-Item -ItemType Directory -Force -Path (Split-Path -Parent $File) | Out-Null; Set-Content -LiteralPath $File -Value $Entry.Value }
     $Zip = Join-Path $Fixture $Name
     Compress-Archive -Path (Join-Path $Dir '*') -DestinationPath $Zip
     $Uri = 'https://fixture.invalid/' + $Name
@@ -44,7 +44,7 @@ try {
     foreach ($Name in $Libraries) { $GpuFiles[$Name] = 'gpu-' + $Name }
     $Cpu = Archive 'llama-b-review-bin-win-cpu-x64.zip' $CpuFiles
     $Gpu = Archive 'llama-b-review-bin-win-cuda-12.9-x64.zip' $GpuFiles
-    $Cuda = Archive 'cudart-llama-bin-win-cuda-12.9-x64.zip' @{ 'cudart64_12.dll' = 'matching-cuda' }
+    $Cuda = Archive 'cudart-llama-bin-win-cuda-12.9-x64.zip' @{ 'runtime/cudart64_12.dll' = 'matching-cuda' }
     $global:RouterReviewRelease = @{ assets = @($Cpu, $Gpu, $Cuda) }
     $App = Join-Path $Fixture 'app'
     $ServerBin = Join-Path $App 'portable-data/bin'
@@ -97,13 +97,13 @@ try {
         & (Join-Path $SourceRoot 'tauri-shell/smoke-package.ps1') -AppDir $Packaged -Model $Model -Port 62731
         Assert $true 'Non-empty response was rejected'
     }
-    foreach ($BadReply in @(@{ choices = @() }, @{ choices = 'invalid' }, @{ choices = @(@{ message = @{ content = '   ' } }) }, @{ choices = @(@{ message = @{ content = @{ invalid = 'shape' } } }) })) {
+    foreach ($BadReply in @(@{ choices = @() }, @{ choices = 'invalid' }, @{ choices = @(@{ message = @{ content = '   '; role = 'assistant' } }) }, @{ choices = @(@{ message = @{ content = 'text'; role = 'user' } }) }, @{ choices = @(@{ message = @{ content = @{ invalid = 'shape' }; role = 'assistant' } }) })) {
         $global:RouterReviewReply = $BadReply
         $Rejected = $false
         try { & (Join-Path $SourceRoot 'tauri-shell/smoke-package.ps1') -AppDir $Packaged -Model $Model -Port 62731 } catch { $Rejected = $true }
         Assert $Rejected 'An invalid smoke response was accepted'
     }
-    Assert ($global:RouterReviewStops -eq 7) 'Smoke test did not clean up after every response'
+    Assert ($global:RouterReviewStops -eq 8) 'Smoke test did not clean up after every response'
     Write-Host "Packaging regressions passed ($global:RouterReviewChecks checks). Network, npm and model execution were mocked."
 }
 finally {

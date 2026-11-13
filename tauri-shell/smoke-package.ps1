@@ -47,7 +47,7 @@ try {
     $Reply = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/v1/chat/completions" -Method Post -ContentType "application/json" -Body $Body -TimeoutSec 30
     if ($Reply.choices -isnot [array] -or $Reply.choices.Count -eq 0) { throw "Chat response has no choices" }
     $Text = $Reply.choices[0].message.content
-    if ($Text -isnot [string] -or [string]::IsNullOrWhiteSpace($Text)) { throw "Chat response has no text content" }
+    if ($Reply.choices[0].message.role -ne "assistant" -or $Text -isnot [string] -or [string]::IsNullOrWhiteSpace($Text)) { throw "Chat response has no text content" }
     $DeviceLabel = if ($Device) { $Device } else { "default GPU" }
     Write-Host "Passed: llama-server health and chat on $DeviceLabel"
 }

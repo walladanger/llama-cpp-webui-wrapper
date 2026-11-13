@@ -34,7 +34,9 @@ if ($AssetName -like "*-cuda-*") {
     if (-not $Runtime) { throw "Pinned release $Tag has no $RuntimeName" }
     $RuntimeArchive = Join-Path $Cache $Runtime.name
     Invoke-WebRequest -Uri $Runtime.browser_download_url -OutFile $RuntimeArchive -Headers @{ "User-Agent" = "llama-webui-bench-installer" }
-    Expand-Archive -LiteralPath $RuntimeArchive -DestinationPath $Bench.DirectoryName -Force
+    $RuntimeExtract = Join-Path $Extract "cuda-runtime"
+    Expand-Archive -LiteralPath $RuntimeArchive -DestinationPath $RuntimeExtract -Force
+    Get-ChildItem -LiteralPath $RuntimeExtract -Filter "*.dll" -File -Recurse | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $Bench.DirectoryName -Force }
 }
 foreach ($Name in @("llama-bench-impl.dll", "llama.dll", "llama-common.dll", "ggml.dll", "ggml-base.dll")) {
     if (-not (Test-Path -LiteralPath (Join-Path $Bench.DirectoryName $Name))) { throw "Pinned release $Tag has no $Name" }
