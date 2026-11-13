@@ -26,6 +26,10 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Test benchmark packaging
+        shell: pwsh
+        run: ../validation/test-pr4-packaging.ps1
+
       - name: Build
         run: cargo build --release --bins
 

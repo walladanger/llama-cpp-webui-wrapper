@@ -67,8 +67,8 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot "llama-server.default.json") -De
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "vllm.default.json") -Destination (Join-Path $App "portable-data\config\vllm.json")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "trtllm.default.json") -Destination (Join-Path $App "portable-data\config\trtllm.json")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "install-llama-bench.ps1") -Destination (Join-Path $App "install-llama-bench.ps1")
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "llama-cpp-release.txt") -Destination (Join-Path $App "llama-cpp-release.txt")
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "cuda-version.txt") -Destination (Join-Path $App "cuda-version.txt")
+$Tag | Set-Content -LiteralPath (Join-Path $App "llama-cpp-release.txt") -Encoding ascii
+$CudaVersion | Set-Content -LiteralPath (Join-Path $App "cuda-version.txt") -Encoding ascii
 @"
 llama.cpp WebUI - portable
 

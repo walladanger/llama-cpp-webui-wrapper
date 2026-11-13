@@ -20,8 +20,8 @@ pub type Shared = Arc<Control>;
 
 fn executable(root: &Path) -> Result<PathBuf, String> {
     [
-        "portable-data/bin/llama-bench.exe",
         "portable-data/bench/bin/llama-bench.exe",
+        "portable-data/bin/llama-bench.exe",
     ]
     .iter()
     .map(|p| root.join(p))
@@ -482,6 +482,35 @@ mod tests {
             .iter()
             .any(|r| r["id"] == report["id"]));
         println!("smoke report {}", report["id"]);
+    }
+    #[test]
+    fn isolated_benchmark_precedes_bundled_binary() {
+        let root = std::env::temp_dir().join(format!(
+            "router-gui-bench-review-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let bundled = root.join("portable-data/bin/llama-bench.exe");
+        let isolated = root.join("portable-data/bench/bin/llama-bench.exe");
+        fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        fs::create_dir_all(isolated.parent().unwrap()).unwrap();
+        fs::write(&bundled, "old").unwrap();
+        fs::write(&isolated, "new").unwrap();
+        assert_eq!(executable(&root).unwrap(), isolated);
+        for file in [&bundled, &isolated] {
+            fs::remove_file(file).unwrap();
+        }
+        for dir in [
+            "portable-data/bench/bin",
+            "portable-data/bench",
+            "portable-data/bin",
+            "portable-data",
+            "",
+        ] {
+            fs::remove_dir(root.join(dir)).unwrap();
+        }
     }
     #[test]
     fn plans_have_controlled_placement_and_matched_contexts() {

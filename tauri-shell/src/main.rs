@@ -28,6 +28,28 @@ const SERVER_EXE: &str = if cfg!(windows) {
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct Server(Mutex<Option<Child>>);
+static ENGINE_CHANGE: Mutex<()> = Mutex::new(());
+
+impl Server {
+    fn ensure_started(
+        &self,
+        port: u16,
+        spawn: impl FnOnce() -> Result<Child, String>,
+    ) -> Result<(), String> {
+        let mut child = self.0.lock().map_err(|e| e.to_string())?;
+        let owned = child
+            .as_mut()
+            .is_some_and(|c| matches!(c.try_wait(), Ok(None)));
+        if healthy(port) {
+            if !owned {
+                return Err(format!("Port {port} is in use by another server. Close that server and restart the app."));
+            }
+        } else if !owned {
+            *child = Some(spawn()?);
+        }
+        Ok(())
+    }
+}
 
 pub fn no_console(cmd: &mut Command) {
     #[cfg(windows)]
@@ -190,34 +212,13 @@ fn start(window: WebviewWindow) {
             }
         };
         record("Starting desktop navigation");
-        let owned = app
+        if let Err(error) = app
             .state::<Server>()
-            .0
-            .lock()
-            .unwrap()
-            .as_mut()
-            .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
-        record(&format!(
-            "Initial health: {}, owned: {owned}",
-            healthy(port)
-        ));
-        if healthy(port) && !owned {
-            return show_status(
-                &window,
-                &format!("Port {port} is in use by another server. Set LLAMA_CPP_PORT to a free port and restart the app."),
-                true,
-            );
+            .ensure_started(port, || spawn_server(&root, port))
+        {
+            return show_status(&window, &error, true);
         }
         if !healthy(port) {
-            if !owned {
-                match spawn_server(&root, port) {
-                    Ok(child) => {
-                        *app.state::<Server>().0.lock().unwrap() = Some(child);
-                        record("Spawned llama-server");
-                    }
-                    Err(e) => return show_status(&window, &e, true),
-                }
-            }
             let log = root
                 .join("portable-data")
                 .join("logs")
@@ -482,6 +483,17 @@ async fn manager_call(
         }
     }
     tauri::async_runtime::spawn_blocking(move || {
+        let _change = if matches!(args[0].as_str(), "vllm" | "trtllm")
+            && matches!(action.as_str(), "start" | "stop")
+        {
+            Some(
+                ENGINE_CHANGE
+                    .try_lock()
+                    .map_err(|_| "Wait for the current engine operation to finish")?,
+            )
+        } else {
+            None
+        };
         let mut command = Command::new(manager_exe()?);
         command.args(&args).env("LLAMA_WEBUI_ROOT", root);
         no_console(&mut command);
@@ -561,6 +573,27 @@ fn read_engine_config(window: WebviewWindow, engine: String) -> Result<serde_jso
     serde_json::from_slice(&data).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+fn write_engine_config(
+    path: &Path,
+    config: &serde_json::Value,
+    stop_previous: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if path.is_file() {
+        let previous: serde_json::Value =
+            serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if previous
+            .get("distro")
+            .and_then(|v| v.as_str())
+            .is_some_and(|distro| Some(distro) != config.get("distro").and_then(|v| v.as_str()))
+        {
+            stop_previous()?;
+        }
+    }
+    let bytes = serde_json::to_vec_pretty(config).map_err(|e| e.to_string())?;
+    fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 #[tauri::command]
 fn save_engine_config(
     window: WebviewWindow,
@@ -578,6 +611,9 @@ fn save_engine_config(
         settings::save_profile(&path, profile, revision)?;
         return Ok(());
     }
+    let _change = ENGINE_CHANGE
+        .try_lock()
+        .map_err(|_| "Wait for the current engine operation to finish")?;
     let str_field = |key: &str| config.get(key).and_then(|v| v.as_str()).unwrap_or("");
     if ["distro", "executable", "model"]
         .iter()
@@ -611,8 +647,22 @@ fn save_engine_config(
             return Err("CUDA_HOME must be an absolute WSL path".into());
         }
     }
-    let bytes = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
-    fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    write_engine_config(&path, &config, || {
+        let mut command = Command::new(manager_exe()?);
+        command
+            .args([&engine, "stop"])
+            .env("LLAMA_WEBUI_ROOT", root_dir());
+        no_console(&mut command);
+        let output = process_probe::capture(command, Duration::from_secs(45), 256 * 1024)?;
+        if output.success {
+            Ok(())
+        } else {
+            Err(format!(
+                "Could not stop the previous WSL service; settings were not changed: {}{}",
+                output.stdout, output.stderr
+            ))
+        }
+    })
 }
 
 #[tauri::command]
@@ -753,4 +803,95 @@ fn main() {
             stop(handle);
         }
     });
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    #[test]
+    fn simultaneous_startup_retains_one_owned_child() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let server = Arc::new(Server(Mutex::new(None)));
+        let count = Arc::new(AtomicUsize::new(0));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let server = server.clone();
+                let count = count.clone();
+                std::thread::spawn(move || {
+                    server.ensure_started(0, || {
+                        count.fetch_add(1, Ordering::SeqCst);
+                        let mut command = if cfg!(windows) {
+                            let mut c = Command::new("powershell.exe");
+                            c.args([
+                                "-NoProfile",
+                                "-NonInteractive",
+                                "-Command",
+                                "Start-Sleep -Seconds 30",
+                            ]);
+                            c
+                        } else {
+                            let mut c = Command::new("sleep");
+                            c.arg("30");
+                            c
+                        };
+                        no_console(&mut command);
+                        command
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()
+                            .map_err(|e| e.to_string())
+                    })
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap().unwrap();
+        }
+        if let Some(mut child) = server.0.lock().unwrap().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+    #[test]
+    fn distro_change_stops_using_old_config_and_failure_preserves_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "router-config-review-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("vllm.json");
+        let old = serde_json::json!({"distro":"Old","model":"same"});
+        let new = serde_json::json!({"distro":"New","model":"same"});
+        fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+        let result = write_engine_config(&path, &new, || {
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
+                old
+            );
+            Err("cannot stop".into())
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
+            old
+        );
+        write_engine_config(&path, &new, || Ok(())).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
+            new
+        );
+        write_engine_config(&path, &new, || {
+            panic!("same distro must not stop the service")
+        })
+        .unwrap();
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
 }

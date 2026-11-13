@@ -9,6 +9,12 @@ The Windows package opens the stock llama.cpp web UI as its main window on port 
 
 The main window has a custom title bar. The Models page can select multiple external GGUF folders without moving files, choose the Hugging Face download cache, load or unload models, and start a GGUF download from a Hugging Face repository. Selected folders are saved in `portable-data/config/app-paths.json` and exposed through a generated `external-models.ini` preset. The Logs page can choose a log folder, open it in File Explorer, read local log files, and view the vLLM or TensorRT-LLM service journal. Cache and log folder changes take effect after restarting the app.
 
+## WSL service lifetime and settings
+
+The manager keeps a hidden foreground WSL client open while each managed systemd unit is active. It exits within five seconds after the unit stops; starting the same unit again reuses its keepalive lock. This avoids relying on systemd alone to keep WSL running and does not change your global WSL idle timeout. The distro must provide bash and flock (included in the supported Ubuntu setup). See [Microsoft's systemd lifecycle notes](https://learn.microsoft.com/en-us/windows/wsl/systemd).
+
+Changing an engine's saved WSL distro stops its service using the old settings before writing the new settings. If that stop fails, settings remain unchanged. Start and Stop are serialized with settings changes. After repairing a settings file externally, use Refresh status to reload it without reopening the app.
+
 ## vLLM
 
 Install vLLM and a model in WSL2 separately. Edit `portable-data\config\vllm.json` in the portable package to choose the WSL distro, `vllm` executable, model, port, GPU IDs, context length, and GPU memory share. Then run:
@@ -49,6 +55,8 @@ The official pinned llama.cpp package normally includes `llama-bench.exe`. If it
 .\llama-engine-manager.exe bench run C:\path\to\model.gguf
 .\llama-engine-manager.exe bench run C:\path\to\model.gguf CUDA2
 ```
+
+Optional benchmark downloads keep the executable and matching release DLLs together in `portable-data/bench/bin`, including the matching CUDA runtime when needed. That isolated copy takes precedence over a bundled or older benchmark in `portable-data/bin`; server DLLs are not replaced.
 
 The benchmark runs 512 prompt tokens and 128 generated tokens, repeats each test three times, and saves the Markdown output to `portable-data\logs\llama-bench.md`. It measures llama.cpp itself; it does not benchmark the vLLM or TensorRT-LLM API. If TensorRT-LLM is missing in the configured WSL distro, the dashboard displays an installation guide prompt on startup. The TensorRT page now offers guided automatic setup. It checks existing Linux installations and can reuse Docker Desktop, or install native prerequisites on supported Ubuntu versions. Downloads and system changes start only when requested from that setup page.
 

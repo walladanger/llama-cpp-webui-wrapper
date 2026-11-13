@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -130,6 +130,53 @@ fn wsl_distro(distro: &str, args: &[&str]) -> Result<Output, String> {
         .map_err(|e| format!("Cannot run WSL distro {distro}: {e}"))
 }
 
+fn keep_wsl_alive(distro: &str, unit: &str) -> Result<(), String> {
+    // A foreground WSL client keeps the distro alive until its unit stops.
+    let script = include_str!("../wsl-keepalive.sh");
+    let mut command = Command::new("wsl.exe");
+    command
+        .args([
+            "-d",
+            distro,
+            "--exec",
+            "bash",
+            "-c",
+            script,
+            "llama-router-keepalive",
+            unit,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Could not keep WSL distro {distro} alive: {e}"))?;
+    thread::sleep(Duration::from_millis(100));
+    if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+        if !status.success() {
+            return Err(format!("WSL keepalive for {unit} exited: {status}"));
+        }
+    }
+    Ok(())
+}
+
+fn trt_model_matches(configured: &str, served: &str) -> bool {
+    served == configured
+        || (configured.starts_with('/')
+            && served
+                == configured
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(configured))
+}
+
 fn trt_config(root: &Path) -> Result<TrtllmConfig, String> {
     let path = root.join("portable-data/config/trtllm.json");
     let data = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -184,9 +231,20 @@ fn trt_installed(cfg: &TrtllmConfig) -> Result<bool, String> {
     Ok(false)
 }
 
+fn unit_is_active(result: &Output) -> Result<bool, String> {
+    let state = String::from_utf8_lossy(&result.stdout);
+    let state = state.trim();
+    let inactive = matches!(result.status.code(), Some(3) | Some(4))
+        && matches!(state, "inactive" | "failed" | "unknown");
+    if !result.status.success() && !inactive {
+        return Err(output_text(result));
+    }
+    Ok(result.status.success() && state == "active")
+}
+
 fn trt_active(cfg: &TrtllmConfig) -> Result<bool, String> {
     let result = wsl_distro(&cfg.distro, &["systemctl", "--user", "is-active", TRT_UNIT])?;
-    Ok(result.status.success() && String::from_utf8_lossy(&result.stdout).trim() == "active")
+    unit_is_active(&result)
 }
 
 fn trt_start(cfg: &TrtllmConfig) -> Result<(), String> {
@@ -246,12 +304,13 @@ fn trt_start(cfg: &TrtllmConfig) -> Result<(), String> {
         }
         println!("{}", output_text(&result));
     }
+    keep_wsl_alive(&cfg.distro, TRT_UNIT)?;
     let started = Instant::now();
     while started.elapsed() < START_TIMEOUT {
         if healthy(cfg.port) {
             let served = running_model(cfg.port)
                 .ok_or("TensorRT-LLM health is ready but /v1/models is unavailable")?;
-            if served != cfg.model {
+            if !trt_model_matches(&cfg.model, &served) {
                 return Err(format!(
                     "Running model {served} differs from configured model {}",
                     cfg.model
@@ -374,8 +433,8 @@ fn trt_logs(cfg: &TrtllmConfig) -> Result<(), String> {
 
 fn bench_exe(root: &Path) -> Option<PathBuf> {
     [
-        root.join("portable-data/bin/llama-bench.exe"),
         root.join("portable-data/bench/bin/llama-bench.exe"),
+        root.join("portable-data/bin/llama-bench.exe"),
     ]
     .into_iter()
     .find(|path| path.is_file())
@@ -459,7 +518,7 @@ fn output_text(output: &Output) -> String {
 
 fn active(cfg: &VllmConfig) -> Result<bool, String> {
     let result = wsl(cfg, &["systemctl", "--user", "is-active", UNIT])?;
-    Ok(result.status.success() && String::from_utf8_lossy(&result.stdout).trim() == "active")
+    unit_is_active(&result)
 }
 
 fn port_open(port: u16) -> bool {
@@ -575,6 +634,7 @@ fn start(cfg: &VllmConfig) -> Result<(), String> {
         println!("{UNIT} is already active");
     }
 
+    keep_wsl_alive(&cfg.distro, UNIT)?;
     let started = Instant::now();
     while started.elapsed() < START_TIMEOUT {
         if healthy(cfg.port) {
@@ -714,5 +774,65 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    #[test]
+    fn absent_units_are_inactive_and_wsl_errors_are_not_hidden() {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        let code = if cfg!(windows) { 4 } else { 4 << 8 };
+        let mut output = Output {
+            status: std::process::ExitStatus::from_raw(code),
+            stdout: b"inactive\n".to_vec(),
+            stderr: vec![],
+        };
+        assert!(!unit_is_active(&output).unwrap());
+        output.stdout.clear();
+        output.stderr = b"Cannot access WSL distribution".to_vec();
+        assert!(unit_is_active(&output).is_err());
+    }
+    #[test]
+    fn tensor_rt_accepts_local_directory_names_but_not_repo_basenames() {
+        assert!(trt_model_matches("/models/tiny/", "tiny"));
+        assert!(trt_model_matches("/models/tiny", "/models/tiny"));
+        assert!(trt_model_matches("org/tiny", "org/tiny"));
+        assert!(!trt_model_matches("org/tiny", "tiny"));
+        assert!(!trt_model_matches("/models/tiny", "different"));
+    }
+    #[test]
+    fn isolated_benchmark_takes_precedence() {
+        let root = env::temp_dir().join(format!(
+            "router-bench-review-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let bundled = root.join("portable-data/bin/llama-bench.exe");
+        let isolated = root.join("portable-data/bench/bin/llama-bench.exe");
+        fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        fs::create_dir_all(isolated.parent().unwrap()).unwrap();
+        fs::write(&bundled, "old").unwrap();
+        assert_eq!(bench_exe(&root), Some(bundled.clone()));
+        fs::write(&isolated, "new").unwrap();
+        assert_eq!(bench_exe(&root), Some(isolated.clone()));
+        for file in [&bundled, &isolated] {
+            fs::remove_file(file).unwrap();
+        }
+        for dir in [
+            "portable-data/bench/bin",
+            "portable-data/bench",
+            "portable-data/bin",
+            "portable-data",
+            "",
+        ] {
+            fs::remove_dir(root.join(dir)).unwrap();
+        }
     }
 }
