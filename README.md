@@ -4,7 +4,7 @@ A Windows desktop application for running local language models, controlling the
 
 ![CI](https://img.shields.io/github/actions/workflow/status/walladanger/llama-cpp-webui-wrapper/tauri-shell.yml?branch=main&label=CI) ![License](https://img.shields.io/github/license/walladanger/llama-cpp-webui-wrapper) ![Release](https://img.shields.io/github/v/release/walladanger/llama-cpp-webui-wrapper)
 
-> **Development status - November 6, 2026:** The GPU-profile, desktop-control and hover-help update is implemented and tested in [draft PR #5](https://github.com/walladanger/llama-cpp-webui-wrapper/pull/5). It has not been merged into main or declared a finished production release. Published release packages may predate that update.
+> **Release status - November 12, 2026:** The [0.1.3 full Windows installer](https://github.com/walladanger/llama-cpp-webui-wrapper/releases/tag/v0.1.3) is published, and its source is integrated into main. It includes the GPU profiles, model controls, guided TensorRT setup and movable, resizable hover help. This development release does not establish that every optional runtime or model is validated.
 
 [Completed work](docs/project-status/COMPLETED.md) | [Planned work and completion checks](docs/project-status/PLANNED.md) | [Printable completed report](docs/project-status/print/Llama_Router_Completed_Work_2026-11-06.pdf) | [Printable roadmap](docs/project-status/print/Llama_Router_Planned_Work_2026-11-06.pdf)
 
@@ -45,11 +45,11 @@ Two 24 GB cards provide nominal aggregate capacity; they do not become one trans
 
 ## Completed development work
 
-The following features are implemented in the tested update. Their merge/release status is separate from their implementation status.
+The following features are implemented in the source integrated into main. The linked detailed reports preserve the November 6 development snapshot; the [0.1.3 release notes](docs/releases/0.1.3/README.md) record the newer installer and validation evidence.
 
 | Area | Delivered behavior | Boundary |
 | --- | --- | --- |
-| [C01 - Windows desktop launch and update build](docs/project-status/COMPLETED.md) | The Windows shell and companion manager compile, and a portable update package contains the updated binaries, UI, source snapshot and validation records. | This is an update for an existing portable installation. It does not establish that a complete new-machine installer is finished. |
+| [C01 - Windows desktop launch and full installer](docs/releases/0.1.3/README.md) | The 0.1.3 full installer includes the app, manager, pinned CUDA runtime and llama-bench, with model/settings preservation. | Isolated payload, upgrade and uninstall checks passed. Interactive setup and clean-machine prerequisite downloads remain untested. |
 | [C02 - Model, log and engine-control workspace](docs/project-status/COMPLETED.md) | The development UI includes local model-folder, model-list, cache/log-folder and log-viewing controls. Separate pages expose management controls for WSL vLLM, TensorRT-LLM and llama-bench. | Control availability is not a claim that every WSL engine has completed real model inference testing. Full service validation remains planned. |
 | [C03 - GPU discovery with a CUDA identity fallback](docs/project-status/COMPLETED.md) | The runtime discovers the available GPUs on the validation machine: two RTX 3090s and one RTX 4070. | Missing monitoring readings remain unknown. Detection on this machine does not certify every AMD, Intel or other backend. |
 | [C04 - Durable, ordered GPU selection](docs/project-status/COMPLETED.md) | A profile can save an ordered set of physical GPU UUIDs rather than relying on CUDA index numbers that may change. | UUID selection chooses devices for one managed server. It does not create one independent model worker per GPU. |
@@ -58,13 +58,13 @@ The following features are implemented in the tested update. Their merge/release
 | [C07 - Consistent launch validation in Node and Rust](docs/project-status/COMPLETED.md) | Both launch compilers check numeric ranges, Boolean values, GPU split/cache combinations, quoting and managed option conflicts. | Static validation checks the request. It cannot prove that every model fits or that an experimental mode works on a particular binary. |
 | [C08 - Protected child environment and redacted diagnostics](docs/project-status/COMPLETED.md) | Managed environment variables and extra arguments cannot bypass the validated settings, and credential values are redacted from launch diagnostics. | This is launch-envelope protection, not a claim of a comprehensive security audit or completed multi-provider credential management. |
 | [C09 - Launch editor and requested/effective preview](docs/project-status/COMPLETED.md) | The Models page contains a collapsible launch-profile editor, physical GPU selector, saved-launch preview and runtime-inspection controls. | Launch changes require an app restart. The controls currently configure the whole server, not individual model instances. |
-| [C10 - Global hover help and input guidance](docs/project-status/COMPLETED.md) | Actions and inputs can reveal a circled question button, compact help, and a nearly full-window documentation panel with black translucent styling and background blur. | Suggested values are examples for comparison. They are never applied automatically and do not replace a model's own configuration requirements. |
+| [C10 - Global hover help and input guidance](docs/releases/0.1.3/README.md) | Compact translucent help panels can be dragged, pinned and resized to reveal more detail without changing the font size. F1 opens the full guide. | Suggested values are examples for comparison. They are never applied automatically and do not replace a model's own configuration requirements. |
 | [C11 - Package identity and bounded capability inspection](docs/project-status/COMPLETED.md) | The wrapper fingerprints the installed executables/DLLs and captures bounded version/help evidence for the selected runtime. | This does not implement automatic downloads, live package replacement, compatibility promotion or rollback. |
 | [C12 - Streaming timing and reproducible correctness checks](docs/project-status/COMPLETED.md) | A reusable canary records runtime/model hashes, resolved settings, allocation logs, generated output, first-token timing and available token counts. | Timing is currently a test-runner capability. A live monitoring dashboard, repeated benchmarks and production performance guarantees are not finished. |
 
 The [expanded completed report](docs/project-status/COMPLETED.md) explains how each item works and the evidence supporting it.
 
-### Validation snapshot
+### November 6 validation snapshot
 
 | Check | Observed result |
 | --- | --- |
@@ -93,8 +93,8 @@ NVML initialization currently fails on the validation host. The CUDA identity fa
 | 4 | **Validated runtime updates and rollback** | Not implemented: package inspection exists | Obtain compatible runtime updates without losing saved profiles or replacing a working package prematurely. |
 | 5 | **Performance validation** | Partial: short correctness canaries passed | Establish repeatable performance and capacity evidence before expanding runtime coverage. |
 | 6 | **Additional runtimes** | Partial: vLLM/TensorRT-LLM management controls exist | Expand the router through runtime-specific adapters after the performance-validation priority. |
-| 7 | **Final installer and fresh-install experience** | Partial: portable build/update and source setup exist | Let a user install and launch the completed app with clear prerequisites, a working shortcut and no manual server-start sequence. |
-| 8 | **Independent review, integration and release** | Pending | Turn the tested development update into a reviewed, integrated release with an accurate support boundary. |
+| 7 | **Final installer and fresh-install experience** | Full 0.1.3 installer published; isolated validation passed | Complete interactive setup and clean-machine prerequisite validation. |
+| 8 | **Independent review, integration and release** | Source integrated and 0.1.3 published; independent review pending | Complete independent review while retaining the documented validation limits. |
 
 The [expanded roadmap](docs/project-status/PLANNED.md) includes implementation work, dependencies and checkboxes for deciding when each item is actually complete.
 
@@ -121,33 +121,36 @@ RAG and document-ingestion work remain deferred while the runtime/server foundat
 
 ## Using the app
 
-### Published portable packages
+### Full installer (Windows x64 CUDA)
 
-1. Check the [releases page](https://github.com/walladanger/llama-cpp-webui-wrapper/releases) for a published Windows package and read its release notes. A main-branch release may not contain the draft update described here.
-2. Extract the complete portable package. Keep its configuration, model locations and runtime files together as documented by that release.
-3. Add suitable GGUF models, then launch the Windows executable.
+1. Download [LlamaCpp-Router-0.1.3-Windows-x64-Setup.exe](https://github.com/walladanger/llama-cpp-webui-wrapper/releases/download/v0.1.3/LlamaCpp-Router-0.1.3-Windows-x64-Setup.exe).
+2. Run Setup. For an upgrade, keep the existing installation folder.
+3. Open Router from its shortcut, then add or download a model.
 
-The separate development update package is intended for an existing compatible portable installation. It is not a full fresh-install installer and does not include a replacement model collection.
+The full installer includes the desktop app, pinned llama.cpp/CUDA runtime, llama-bench and app-local VC runtime dependencies. Setup checks WebView2 and installs it if missing. Models and optional WSL/TensorRT/vLLM environments are separate downloads. Models, configuration, cache and logs are preserved during upgrades and uninstall. This build is unsigned.
 
-### Development update from source
+Installer validation passed isolated fresh-install, payload-hash, runtime-version, upgrade and uninstall-preservation checks. Silent validation skips registry, shortcuts and prerequisite-download side effects; interactive setup and clean-machine bootstrap remain untested. See the [release notes and checksum](docs/releases/0.1.3/README.md).
 
-The tested source is currently on `codex/router-gpu-profiles-help-20261106`, associated with [PR #5](https://github.com/walladanger/llama-cpp-webui-wrapper/pull/5). Review the scripts and prerequisites before running the setup.
+Full installers are the primary Windows distribution. The portable ZIP remains available on the [releases page](https://github.com/walladanger/llama-cpp-webui-wrapper/releases); extract the complete package before launching it. Older update-only packages require an existing compatible installation.
+
+### Build from source
+
+The current source is integrated into main. The published installer is tied to tag `v0.1.3`; use that tag when reproducing the release. Review the scripts and prerequisites before running setup.
 
 ```powershell
 git clone https://github.com/walladanger/llama-cpp-webui-wrapper.git
 cd llama-cpp-webui-wrapper
-git switch --track origin/codex/router-gpu-profiles-help-20261106
 .\Setup-Llama-WebUI.ps1
 .\Run-Llama-WebUI.ps1
 ```
 
-Source builds need Node.js for the UI/wrapper and the Rust/Windows build environment for the Tauri shell. The source setup can obtain a CPU server when none is installed; GPU execution requires a compatible runtime package and NVIDIA driver. WSL engines have separate installation and model requirements. See the [development shell notes](https://github.com/walladanger/llama-cpp-webui-wrapper/blob/codex/router-gpu-profiles-help-20261106/tauri-shell/README.md).
+Source builds need Node.js for the UI/wrapper and the Rust/Windows build environment for the Tauri shell. The source setup can obtain a CPU server when none is installed; GPU execution requires a compatible runtime package and NVIDIA driver. WSL engines have separate installation and model requirements. See the [development shell notes](https://github.com/walladanger/llama-cpp-webui-wrapper/blob/main/tauri-shell/README.md).
 
 ### Configuration and help
 
 The launcher reads `portable-data/config/llama-server.json` and turns the saved settings into runtime arguments. The updated Models page adds the launch-profile editor. Legacy flat settings migrate on read; saving writes a versioned profile with revision protection.
 
-Hover an action or input to reveal its help button. Click it, or focus the control and press F1, to read the larger guide. Suggested values explain starting points and trade-offs; opening help never applies them automatically. Saving launch settings does not reconfigure a model already loaded into memory. Restart the app to apply them.
+Hover an action or input for compact help. Drag the help panel by its header to move it; pin it to keep it open. Resizing reveals more explanation without scaling the font. Focus the control and press F1 to read the full guide. Suggested values explain starting points and trade-offs; opening help never applies them automatically. Saving launch settings does not reconfigure a model already loaded into memory. Restart the app to apply them.
 
 ## Project records
 
@@ -155,7 +158,7 @@ Hover an action or input to reveal its help button. Click it, or focus the contr
 - [Ordered roadmap and completion checklist](docs/project-status/PLANNED.md)
 - [Printable completed report](docs/project-status/print/Llama_Router_Completed_Work_2026-11-06.pdf)
 - [Printable planned-work report](docs/project-status/print/Llama_Router_Planned_Work_2026-11-06.pdf)
-- [Development implementation notes](https://github.com/walladanger/llama-cpp-webui-wrapper/blob/codex/router-gpu-profiles-help-20261106/PROJECT_STATUS.md)
+- [Development implementation notes](https://github.com/walladanger/llama-cpp-webui-wrapper/blob/main/PROJECT_STATUS.md)
 - [Draft implementation PR #5](https://github.com/walladanger/llama-cpp-webui-wrapper/pull/5)
 
 ## License and credits

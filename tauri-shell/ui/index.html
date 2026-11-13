@@ -34,6 +34,9 @@
   @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } header { flex-wrap: wrap; } }
   @media (max-width: 560px) { main { padding: 18px; } header { padding: 18px; } .fields { grid-template-columns: 1fr; } .notice { align-items: flex-start; flex-direction: column; } }
 </style>
+<link rel="stylesheet" href="context-help.css">
+<script defer src="context-help-catalog.js"></script>
+<script defer src="context-help.js"></script>
 </head>
 <body>
 <header>
@@ -101,10 +104,11 @@
         if (node.type === 'checkbox') node.checked = Boolean(config[field]); else node.value = config[field] ?? '';
       }
       endpoint(engine);
-    } catch (error) { display(`${engine}-output`, `Could not read settings: ${error}`); }
+      return true;
+    } catch (error) { delete configs[engine]; display(`${engine}-output`, `Could not read settings: ${error}. Repair the file, then click Refresh status to retry.`); return false; }
   }
   async function saveConfig(engine) {
-    if (!configs[engine]) return;
+    if (!configs[engine]) { display(`${engine}-output`, "Settings are not loaded. Repair the file, then click Refresh status to retry."); return; }
     const config = { ...configs[engine] };
     for (const field of fields[engine]) {
       const node = $(`${engine}-${field}`);
@@ -117,6 +121,7 @@
     if (button) button.disabled = true;
     display(`${engine}-output`, `${action === 'start' ? 'Starting' : action === 'run' ? 'Benchmarking' : 'Running'}...`);
     try {
+      if (action === "status") { await refreshEngine(engine); return; }
       const result = await invoke('manager_call', { engine, action, model: model || null, device: device || null });
       display(`${engine}-output`, result);
       if (action === 'start' || action === 'stop') await refreshEngine(engine);
@@ -130,6 +135,7 @@
       catch { badge('bench', 'Missing', 'missing'); }
       return;
     }
+    if (!configs[engine] && !(await loadConfig(engine))) { badge(engine, "Unavailable", "missing"); return; }
     if (engine === 'trtllm') {
       try { await invoke('manager_call', { engine, action: 'installed' }); }
       catch (error) { badge(engine, String(error).includes('not installed in WSL2') ? 'Missing' : 'Unavailable', 'missing'); display(`${engine}-output`, String(error)); return; }
@@ -139,7 +145,9 @@
       display(`${engine}-output`, status);
       const ready = status.includes('ActiveState=active') && status.includes('HTTP health: ready');
       const served = status.match(/^Running model: (.+)$/m)?.[1];
-      const mismatch = ready && served && configs[engine]?.model !== served;
+      const configured = configs[engine]?.model || "";
+      const expected = engine === "trtllm" && configured.startsWith("/") ? configured.replace(/\/+$/, "").split("/").pop() : configured;
+      const mismatch = ready && served && configured !== served && expected !== served;
       badge(engine, mismatch ? 'Model differs' : ready ? 'Ready' : 'Stopped', mismatch ? 'missing' : ready ? 'ready' : '');
     } catch (error) { badge(engine, 'Unavailable', 'missing'); display(`${engine}-output`, String(error)); }
   }

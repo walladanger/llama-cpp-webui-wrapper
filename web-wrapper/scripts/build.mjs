@@ -8,5 +8,5 @@ const root = join(here, "..");
 mkdirSync(join(root, "dist", "runtimes"), { recursive: true });
 copyFileSync(join(root, "src", "main.js"), join(root, "dist", "main.js"));
 for (const file of readdirSync(join(root, "src", "runtimes"))) {
-  if (file.endsWith(".js")) copyFileSync(join(root, "src", "runtimes", file), join(root, "dist", "runtimes", file));
+  if (file.endsWith(".js") || file.endsWith(".json")) copyFileSync(join(root, "src", "runtimes", file), join(root, "dist", "runtimes", file));
 }

@@ -1,10 +1,12 @@
+#[path = "../cuda_inventory.rs"]
+mod cuda_inventory;
 use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -114,7 +116,7 @@ fn wsl(cfg: &VllmConfig, args: &[&str]) -> Result<Output, String> {
     Command::new("wsl.exe")
         .arg("-d")
         .arg(&cfg.distro)
-        .arg("--")
+        .arg("--exec")
         .args(args)
         .output()
         .map_err(|e| format!("Cannot run wsl.exe: {e}"))
@@ -122,10 +124,62 @@ fn wsl(cfg: &VllmConfig, args: &[&str]) -> Result<Output, String> {
 
 fn wsl_distro(distro: &str, args: &[&str]) -> Result<Output, String> {
     Command::new("wsl.exe")
-        .args(["-d", distro, "--"])
+        .args(["-d", distro, "--exec"])
         .args(args)
         .output()
         .map_err(|e| format!("Cannot run WSL distro {distro}: {e}"))
+}
+
+fn keep_wsl_alive(distro: &str, unit: &str) -> Result<(), String> {
+    // A foreground WSL client keeps the distro alive until its unit stops.
+    let script = r#"exec 9>"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$1.keepalive"
+flock -n 9
+lock=$?
+[ "$lock" -eq 1 ] && exit 0
+[ "$lock" -eq 0 ] || exit "$lock"
+while systemctl --user is-active --quiet "$1"; do sleep 5; done"#;
+    let mut command = Command::new("wsl.exe");
+    command
+        .args([
+            "-d",
+            distro,
+            "--exec",
+            "bash",
+            "-c",
+            script,
+            "llama-router-keepalive",
+            unit,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Could not keep WSL distro {distro} alive: {e}"))?;
+    thread::sleep(Duration::from_millis(100));
+    if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+        if !status.success() {
+            return Err(format!("WSL keepalive for {unit} exited: {status}"));
+        }
+    }
+    Ok(())
+}
+
+fn trt_model_matches(configured: &str, served: &str) -> bool {
+    served == configured
+        || (configured.starts_with('/')
+            && served
+                == configured
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(configured))
 }
 
 fn trt_config(root: &Path) -> Result<TrtllmConfig, String> {
@@ -244,12 +298,13 @@ fn trt_start(cfg: &TrtllmConfig) -> Result<(), String> {
         }
         println!("{}", output_text(&result));
     }
+    keep_wsl_alive(&cfg.distro, TRT_UNIT)?;
     let started = Instant::now();
     while started.elapsed() < START_TIMEOUT {
         if healthy(cfg.port) {
             let served = running_model(cfg.port)
                 .ok_or("TensorRT-LLM health is ready but /v1/models is unavailable")?;
-            if served != cfg.model {
+            if !trt_model_matches(&cfg.model, &served) {
                 return Err(format!(
                     "Running model {served} differs from configured model {}",
                     cfg.model
@@ -327,6 +382,12 @@ fn trt_status(cfg: &TrtllmConfig) -> Result<(), String> {
 
 fn trt_stop(cfg: &TrtllmConfig) -> Result<(), String> {
     if !trt_active(cfg)? {
+        if cfg.executable == "/opt/llama-router/trtllm/bin/trtllm-serve" {
+            let cleanup = wsl_distro(&cfg.distro, &[&cfg.executable, "--router-stop"])?;
+            if !cleanup.status.success() {
+                return Err(output_text(&cleanup));
+            }
+        }
         println!("{TRT_UNIT} is not active");
         return Ok(());
     }
@@ -335,6 +396,12 @@ fn trt_stop(cfg: &TrtllmConfig) -> Result<(), String> {
         return Err(output_text(&result));
     }
     println!("Stopped {TRT_UNIT}");
+    if cfg.executable == "/opt/llama-router/trtllm/bin/trtllm-serve" {
+        let cleanup = wsl_distro(&cfg.distro, &[&cfg.executable, "--router-stop"])?;
+        if !cleanup.status.success() {
+            return Err(output_text(&cleanup));
+        }
+    }
     Ok(())
 }
 
@@ -360,8 +427,8 @@ fn trt_logs(cfg: &TrtllmConfig) -> Result<(), String> {
 
 fn bench_exe(root: &Path) -> Option<PathBuf> {
     [
-        root.join("portable-data/bin/llama-bench.exe"),
         root.join("portable-data/bench/bin/llama-bench.exe"),
+        root.join("portable-data/bin/llama-bench.exe"),
     ]
     .into_iter()
     .find(|path| path.is_file())
@@ -561,6 +628,7 @@ fn start(cfg: &VllmConfig) -> Result<(), String> {
         println!("{UNIT} is already active");
     }
 
+    keep_wsl_alive(&cfg.distro, UNIT)?;
     let started = Instant::now();
     while started.elapsed() < START_TIMEOUT {
         if healthy(cfg.port) {
@@ -663,6 +731,7 @@ fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
     let root = root_dir();
     match args.as_slice() {
+        [action] if action=="cuda-inventory" => { println!("{}",cuda_inventory::inventory()?);Ok(()) },
         [engine, action] if engine == "vllm" => {
             let cfg = config(&root)?;
             match action.as_str() {
@@ -699,5 +768,48 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    #[test]
+    fn tensor_rt_accepts_local_directory_names_but_not_repo_basenames() {
+        assert!(trt_model_matches("/models/tiny/", "tiny"));
+        assert!(trt_model_matches("/models/tiny", "/models/tiny"));
+        assert!(trt_model_matches("org/tiny", "org/tiny"));
+        assert!(!trt_model_matches("org/tiny", "tiny"));
+        assert!(!trt_model_matches("/models/tiny", "different"));
+    }
+    #[test]
+    fn isolated_benchmark_takes_precedence() {
+        let root = env::temp_dir().join(format!(
+            "router-bench-review-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let bundled = root.join("portable-data/bin/llama-bench.exe");
+        let isolated = root.join("portable-data/bench/bin/llama-bench.exe");
+        fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        fs::create_dir_all(isolated.parent().unwrap()).unwrap();
+        fs::write(&bundled, "old").unwrap();
+        assert_eq!(bench_exe(&root), Some(bundled.clone()));
+        fs::write(&isolated, "new").unwrap();
+        assert_eq!(bench_exe(&root), Some(isolated.clone()));
+        for file in [&bundled, &isolated] {
+            fs::remove_file(file).unwrap();
+        }
+        for dir in [
+            "portable-data/bench/bin",
+            "portable-data/bench",
+            "portable-data/bin",
+            "portable-data",
+            "",
+        ] {
+            fs::remove_dir(root.join(dir)).unwrap();
+        }
     }
 }

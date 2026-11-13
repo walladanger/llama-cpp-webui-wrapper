@@ -32,6 +32,18 @@ $Work = Join-Path $OutDir "work"
 $App = Join-Path $OutDir "Llama-WebUI"
 foreach ($Dir in @($Work, $App)) { if (Test-Path $Dir) { Remove-Item -LiteralPath $Dir -Recurse -Force } }
 $Bin = Join-Path $App "portable-data\bin"
+$UiSource = Join-Path $PSScriptRoot "..\tools\ui"
+Push-Location $UiSource
+try {
+    & npm ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed for tools/ui" }
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { throw "Web UI build failed" }
+}
+finally { Pop-Location }
+if (-not (Test-Path -LiteralPath (Join-Path $UiSource "dist\index.html"))) {
+    throw "Build tools/ui first: npm ci; npm run build"
+}
 New-Item -ItemType Directory -Force -Path $Work, $Bin, (Join-Path $App "portable-data\models"), (Join-Path $App "portable-data\config") | Out-Null
 
 foreach ($Asset in @($Pick.Server, $Pick.Runtime)) {
@@ -50,18 +62,19 @@ if ($Server.DirectoryName -ne $Bin) {
 
 Copy-Item -LiteralPath $ShellExe -Destination (Join-Path $App "llama-webui.exe")
 Copy-Item -LiteralPath $ManagerExe -Destination (Join-Path $App "llama-engine-manager.exe")
+Copy-Item -LiteralPath (Join-Path $UiSource "dist") -Destination (Join-Path $App "portable-data\ui") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "llama-server.default.json") -Destination (Join-Path $App "portable-data\config\llama-server.json")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "vllm.default.json") -Destination (Join-Path $App "portable-data\config\vllm.json")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "trtllm.default.json") -Destination (Join-Path $App "portable-data\config\trtllm.json")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "install-llama-bench.ps1") -Destination (Join-Path $App "install-llama-bench.ps1")
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "llama-cpp-release.txt") -Destination (Join-Path $App "llama-cpp-release.txt")
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "cuda-version.txt") -Destination (Join-Path $App "cuda-version.txt")
+$Tag | Set-Content -LiteralPath (Join-Path $App "llama-cpp-release.txt") -Encoding ascii
+$CudaVersion | Set-Content -LiteralPath (Join-Path $App "cuda-version.txt") -Encoding ascii
 @"
 llama.cpp WebUI - portable
 
 1. Put .gguf model files in portable-data\models
-2. Double-click llama-webui.exe to open the engine dashboard
-3. Use Open llama.cpp chat test for the bundled llama-server chat window (port 18080)
+2. Double-click llama-webui.exe to open the llama.cpp web app (port 18080)
+3. Use the vLLM, TensorRT-LLM, and llama-bench menu pages for local engine controls
 
 Server settings (GPU placement, context, flash attention, ...): portable-data\config\llama-server.json
 Logs: portable-data\logs\llama-server.log

@@ -11,6 +11,7 @@ $ShortcutPath = Join-Path $Desktop "llama.cpp WebUI.lnk"
 $RunScript = Join-Path $Root "Run-Llama-WebUI.ps1"
 $NpmCache = Join-Path $DataDir "npm-cache"
 $ShellDir = Join-Path $Root "tauri-shell"
+$UiDir = Join-Path $Root "tools\ui"
 $ShellExe = Join-Path $Root "llama-webui.exe"
 $ManagerExe = Join-Path $Root "llama-engine-manager.exe"
 $ReleaseTag = (Get-Content -LiteralPath (Join-Path $ShellDir "llama-cpp-release.txt") -Raw).Trim()
@@ -48,6 +49,12 @@ if (-not (Test-Path $TrtllmConfig)) {
 Write-Host "Installing the desktop wrapper..."
 Invoke-Checked -FilePath "npm" -Arguments @("install", "--cache", $NpmCache) -WorkingDirectory $Wrapper
 Invoke-Checked -FilePath "npm" -Arguments @("run", "build") -WorkingDirectory $Wrapper
+Write-Host "Building the stock web UI with engine pages..."
+Invoke-Checked -FilePath "npm" -Arguments @("ci", "--cache", $NpmCache) -WorkingDirectory $UiDir
+Invoke-Checked -FilePath "npm" -Arguments @("run", "build") -WorkingDirectory $UiDir
+$UiTarget = Join-Path $DataDir "ui"
+New-Item -ItemType Directory -Path $UiTarget -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $UiDir "dist") | Copy-Item -Destination $UiTarget -Recurse -Force
 
 $ServerExe = Join-Path $BinDir "llama-server.exe"
 if (-not (Test-Path $ServerExe)) {

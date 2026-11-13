@@ -23,15 +23,27 @@ if ((Test-Path -LiteralPath (Join-Path $Bin "ggml-cuda.dll")) -and (Test-Path -L
 $Asset = $Release.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
 if (-not $Asset) { throw "Pinned release $Tag has no $AssetName" }
 $Archive = Join-Path $Cache $Asset.name
-$Extract = Join-Path $Cache "extract"
+$Extract = Join-Path $Cache ("extract-" + [guid]::NewGuid().ToString("N"))
 Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $Archive -Headers @{ "User-Agent" = "llama-webui-bench-installer" }
 Expand-Archive -LiteralPath $Archive -DestinationPath $Extract -Force
 $Bench = Get-ChildItem -LiteralPath $Extract -Filter "llama-bench.exe" -Recurse | Select-Object -First 1
 if (-not $Bench) { throw "Pinned release $Tag has no llama-bench.exe" }
-foreach ($Name in @("llama-bench.exe", "llama-bench-impl.dll")) {
-    $Source = Join-Path $Bench.DirectoryName $Name
-    if (-not (Test-Path -LiteralPath $Source)) { throw "Pinned release $Tag has no $Name" }
-    Copy-Item -LiteralPath $Source -Destination $Bin -Force
+if ($AssetName -like "*-cuda-*") {
+    $RuntimeName = "cudart-llama-bin-win-cuda-$CudaVersion-x64.zip"
+    $Runtime = $Release.assets | Where-Object { $_.name -eq $RuntimeName } | Select-Object -First 1
+    if (-not $Runtime) { throw "Pinned release $Tag has no $RuntimeName" }
+    $RuntimeArchive = Join-Path $Cache $Runtime.name
+    Invoke-WebRequest -Uri $Runtime.browser_download_url -OutFile $RuntimeArchive -Headers @{ "User-Agent" = "llama-webui-bench-installer" }
+    Expand-Archive -LiteralPath $RuntimeArchive -DestinationPath $Bench.DirectoryName -Force
 }
-if (-not (Test-Path -LiteralPath (Join-Path $Bin "llama-bench.exe"))) { throw "llama-bench.exe was not installed" }
-Write-Host "Installed llama-bench from pinned llama.cpp $Tag at $Bin"
+foreach ($Name in @("llama-bench-impl.dll", "llama.dll", "llama-common.dll", "ggml.dll", "ggml-base.dll")) {
+    if (-not (Test-Path -LiteralPath (Join-Path $Bench.DirectoryName $Name))) { throw "Pinned release $Tag has no $Name" }
+}
+$BenchBin = Join-Path $Data "bench\bin"
+New-Item -ItemType Directory -Force -Path $BenchBin | Out-Null
+# Clear only benchmark-owned runtime files; the server directory stays unchanged.
+Get-ChildItem -LiteralPath $BenchBin -File | Where-Object { $_.Extension -eq ".dll" -or $_.Name -eq "llama-bench.exe" } | ForEach-Object { Remove-Item -LiteralPath $_.FullName }
+Get-ChildItem -LiteralPath $Bench.DirectoryName -Filter "*.dll" -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $BenchBin -Force }
+Copy-Item -LiteralPath $Bench.FullName -Destination $BenchBin -Force
+if (-not (Test-Path -LiteralPath (Join-Path $BenchBin "llama-bench.exe"))) { throw "llama-bench.exe was not installed" }
+Write-Host "Installed llama-bench from pinned llama.cpp $Tag at $BenchBin"

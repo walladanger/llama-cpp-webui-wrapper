@@ -1,5 +1,7 @@
 # llama.cpp Router: completed development work
 
+> Historical snapshot: the report below records November 6, 2026. The 0.1.3 full installer is now published and its source is integrated into main. See the [current overview](../../README.md) and [release validation and remaining limits](../releases/0.1.3/README.md).
+
 Snapshot: November 6, 2026. Source: [draft PR #5](https://github.com/walladanger/llama-cpp-webui-wrapper/pull/5), commit `973b2e34083085478c691915a4357e5cc8310740`.
 
 The tested development update is in draft PR #5. Its implemented features have not been merged into main or established as a finished production release. A portable update exists; a complete fresh-install release is still pending.

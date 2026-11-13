@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-trt-guide"
+description = "Enables the open_trt_guide command without any pre-configured scope."
+commands.allow = ["open_trt_guide"]
+
+[[permission]]
+identifier = "deny-open-trt-guide"
+description = "Denies the open_trt_guide command without any pre-configured scope."
+commands.deny = ["open_trt_guide"]

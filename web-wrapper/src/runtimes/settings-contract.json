@@ -1,0 +1,89 @@
+{
+  "integers": {
+    "ctx_size": [
+      0,
+      2147483647
+    ],
+    "n_gpu_layers": [
+      -1,
+      2147483647
+    ],
+    "threads": [
+      0,
+      65535
+    ],
+    "threads_batch": [
+      0,
+      65535
+    ],
+    "batch_size": [
+      0,
+      2147483647
+    ],
+    "ubatch_size": [
+      0,
+      2147483647
+    ],
+    "parallel": [
+      0,
+      65535
+    ],
+    "main_gpu": [
+      0,
+      65535
+    ],
+    "concurrent_slots": [
+      2,
+      65535
+    ],
+    "n_predict": [
+      -2,
+      2147483647
+    ],
+    "fit_ctx": [
+      1,
+      2147483647
+    ]
+  },
+  "numbers": {
+    "defrag_thold": [
+      -1,
+      1
+    ],
+    "rope_scale": [
+      0.000001,
+      1000000000
+    ],
+    "rope_freq_base": [
+      0,
+      1000000000000
+    ],
+    "rope_freq_scale": [
+      0.000001,
+      1000000000
+    ]
+  },
+  "booleans": [
+    "fit",
+    "no_kv_offload",
+    "cont_batching",
+    "concurrent_mode",
+    "ctx_shift",
+    "no_mmap",
+    "mlock",
+    "expose_metrics",
+    "p2p"
+  ],
+  "enums": {
+    "gpu_placement": [
+      "manual",
+      "single",
+      "spread"
+    ],
+    "rope_scaling": [
+      "none",
+      "linear",
+      "yarn"
+    ]
+  }
+}

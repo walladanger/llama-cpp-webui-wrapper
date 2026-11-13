@@ -1,8 +1,15 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod benchmark;
+mod gguf_meta;
 mod gpu;
+mod launch;
+mod local_files;
+mod process_probe;
+mod runtime_capabilities;
 mod settings;
+mod trt_setup;
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -21,6 +28,28 @@ const SERVER_EXE: &str = if cfg!(windows) {
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct Server(Mutex<Option<Child>>);
+static ENGINE_CHANGE: Mutex<()> = Mutex::new(());
+
+impl Server {
+    fn ensure_started(
+        &self,
+        port: u16,
+        spawn: impl FnOnce() -> Result<Child, String>,
+    ) -> Result<(), String> {
+        let mut child = self.0.lock().map_err(|e| e.to_string())?;
+        let owned = child
+            .as_mut()
+            .is_some_and(|c| matches!(c.try_wait(), Ok(None)));
+        if healthy(port) {
+            if !owned {
+                return Err(format!("Port {port} is in use by another server. Close that server and restart the app."));
+            }
+        } else if !owned {
+            *child = Some(spawn()?);
+        }
+        Ok(())
+    }
+}
 
 pub fn no_console(cmd: &mut Command) {
     #[cfg(windows)]
@@ -94,7 +123,11 @@ fn show_status(window: &WebviewWindow, text: &str, error: bool) {
 
 fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
     let data = root.join("portable-data");
-    let (logs, models, cache) = (data.join("logs"), data.join("models"), data.join("cache"));
+    let (logs, models, cache) = (
+        local_files::logs_dir(root)?,
+        data.join("models"),
+        local_files::cache_dir(root)?,
+    );
     for dir in [&logs, &models, &cache, &data.join("config")] {
         fs::create_dir_all(dir).map_err(|e| format!("Cannot create {}: {e}", dir.display()))?;
     }
@@ -107,30 +140,33 @@ fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
     })?;
 
     let settings_file = data.join("config").join("llama-server.json");
-    let mut s = settings::Settings::load(&settings_file)?;
-    let mut notes = Vec::new();
-    let mode = s.str("gpu_placement");
-    match mode.as_str() {
-        "" | "manual" => {}
-        "single" | "spread" => {
-            match gpu::plan(&mode, &gpu::list_devices(&exe), &s.str("tensor_split")) {
-                Some(p) => {
-                    notes.push(format!("GPU placement \"{mode}\" -> {}", p.device));
-                    s.set("device", &p.device);
-                    s.set("split_mode", &p.split_mode);
-                    s.set("main_gpu", "0");
-                    s.set("tensor_split", &p.tensor_split);
-                }
-                None => notes.push(format!(
-                    "GPU placement \"{mode}\" found no graphics card; using manual settings."
-                )),
-            }
-        }
-        other => notes.push(format!(
-            "GPU placement \"{other}\" is not supported here; using manual settings."
-        )),
+    let plan = launch::prepare(
+        &exe,
+        settings::load_profile(&settings_file)?,
+        port,
+        &models,
+        &cache,
+    )?;
+    let child_env = plan.env;
+    let notes = plan.notes;
+    let mut args = plan.args;
+    let preset = local_files::write_presets(root, &local_files::load(root)?)?;
+    args.extend([
+        "--models-preset".to_string(),
+        preset.to_string_lossy().into_owned(),
+    ]);
+    let ui = data.join("ui");
+    if ui.join("index.html").is_file() {
+        args.extend(["--path".to_string(), ui.to_string_lossy().into_owned()]);
     }
-    let args = settings::build_args(&s, port, &models);
+
+    let evidence = runtime_capabilities::inspect(&exe, &child_env)?;
+    runtime_capabilities::assert_arguments(&evidence, &args)?;
+    fs::write(
+        logs.join("runtime-capabilities.json"),
+        serde_json::to_vec_pretty(&evidence).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
 
     let log_path = logs.join("llama-server.log");
     let mut log = OpenOptions::new()
@@ -142,7 +178,7 @@ fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
         log,
         "\n\n[tauri-shell] Starting {} {}",
         exe.display(),
-        args.join(" ")
+        settings::redact_args(&args).join(" ")
     );
     for note in &notes {
         let _ = writeln!(log, "{note}");
@@ -152,8 +188,8 @@ fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
     let mut cmd = Command::new(&exe);
     cmd.args(&args)
         .current_dir(root)
-        .envs(settings::parse_env(&s.str("llamacpp_env")))
-        .env("LLAMA_CACHE", &cache)
+        .env_clear()
+        .envs(&child_env)
         .stdin(Stdio::null())
         .stdout(log)
         .stderr(err_log);
@@ -165,34 +201,24 @@ fn spawn_server(root: &Path, port: u16) -> Result<Child, String> {
 fn start(window: WebviewWindow) {
     let app = window.app_handle().clone();
     let root = root_dir();
-    let port: u16 = std::env::var("LLAMA_CPP_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(18080);
+    let port: u16 = 18080;
     let url = format!("http://127.0.0.1:{port}");
 
     std::thread::spawn(move || {
-        let owned = app
+        let trace = root.join("portable-data/logs/shell-startup.log");
+        let record = |message: &str| {
+            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&trace) {
+                let _ = writeln!(file, "{message}");
+            }
+        };
+        record("Starting desktop navigation");
+        if let Err(error) = app
             .state::<Server>()
-            .0
-            .lock()
-            .unwrap()
-            .as_mut()
-            .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
-        if healthy(port) && !owned {
-            return show_status(
-                &window,
-                &format!("Port {port} is in use by another server. Set LLAMA_CPP_PORT to a free port and restart the app."),
-                true,
-            );
+            .ensure_started(port, || spawn_server(&root, port))
+        {
+            return show_status(&window, &error, true);
         }
         if !healthy(port) {
-            if !owned {
-                match spawn_server(&root, port) {
-                    Ok(child) => *app.state::<Server>().0.lock().unwrap() = Some(child),
-                    Err(e) => return show_status(&window, &e, true),
-                }
-            }
             let log = root
                 .join("portable-data")
                 .join("logs")
@@ -200,6 +226,7 @@ fn start(window: WebviewWindow) {
             let started = Instant::now();
             loop {
                 if healthy(port) {
+                    record("Health check passed");
                     break;
                 }
                 let exited = app
@@ -235,7 +262,14 @@ fn start(window: WebviewWindow) {
         }
         match url.parse() {
             Ok(target) => {
-                let _ = window.navigate(target);
+                record("Navigating to server");
+                match window.navigate(target) {
+                    Ok(()) => record("Navigation request accepted"),
+                    Err(e) => {
+                        record(&format!("Navigation failed: {e}"));
+                        show_status(&window, &format!("Could not open the web UI: {e}"), true);
+                    }
+                }
             }
             Err(e) => show_status(&window, &format!("Bad URL {url}: {e}"), true),
         }
@@ -249,12 +283,87 @@ fn require_dashboard(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn benchmark_inspect(
+    window: WebviewWindow,
+    action: String,
+) -> Result<serde_json::Value, String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(move || match action.as_str() {
+        "scan" => benchmark::scan(&root_dir()),
+        "history" => benchmark::history(&root_dir()),
+        _ => Err("Unsupported benchmark inspection".into()),
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn benchmark_control(
+    window: WebviewWindow,
+    action: String,
+    state: tauri::State<'_, benchmark::Shared>,
+) -> Result<serde_json::Value, String> {
+    require_dashboard(&window)?;
+    if action == "cancel" {
+        state
+            .cancel
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    } else if action != "status" {
+        return Err("Unsupported benchmark control".into());
+    }
+    Ok(
+        serde_json::json!({"running": state.running.load(std::sync::atomic::Ordering::SeqCst), "stage": state.stage.lock().unwrap().clone()}),
+    )
+}
+
+#[tauri::command]
+async fn benchmark_run(
+    window: WebviewWindow,
+    model: String,
+    device: String,
+    mode: String,
+    compare: bool,
+    state: tauri::State<'_, benchmark::Shared>,
+) -> Result<serde_json::Value, String> {
+    require_dashboard(&window)?;
+    let control = state.inner().clone();
+    if control
+        .running
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_err()
+    {
+        return Err("A benchmark is already running".into());
+    }
+    control
+        .cancel
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    let running = control.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        benchmark::run(&root_dir(), &model, &device, &mode, compare, &running)
+    })
+    .await;
+    control
+        .running
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    *control.stage.lock().unwrap() = "Idle".into();
+    result.map_err(|e| e.to_string())?
+}
+
 fn manager_exe() -> Result<PathBuf, String> {
     let path = std::env::current_exe()
         .map_err(|e| e.to_string())?
         .with_file_name("llama-engine-manager.exe");
     if !path.is_file() {
-        return Err(format!("Missing {}. Run Setup-Llama-WebUI.ps1.", path.display()));
+        return Err(format!(
+            "Missing {}. Run Setup-Llama-WebUI.ps1.",
+            path.display()
+        ));
     }
     Ok(path)
 }
@@ -278,60 +387,177 @@ async fn open_chat(window: WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn manager_call(window: WebviewWindow, engine: String, action: String, model: Option<String>, device: Option<String>) -> Result<String, String> {
+async fn manager_call(
+    window: WebviewWindow,
+    engine: String,
+    action: String,
+    model: Option<String>,
+    device: Option<String>,
+) -> Result<String, String> {
     require_dashboard(&window)?;
+    if engine == "llamacpp" && action == "plan" {
+        return tauri::async_runtime::spawn_blocking(|| {
+            let root = root_dir();
+            let exe = find_server(&root).ok_or("llama-server not found")?;
+            let profile =
+                settings::load_profile(&root.join("portable-data/config/llama-server.json"))?;
+            let plan = launch::prepare(
+                &exe,
+                profile,
+                18080,
+                &root.join("portable-data/models"),
+                &local_files::cache_dir(&root)?,
+            )?;
+            serde_json::to_string_pretty(&plan).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    if engine == "llamacpp" && action == "capabilities" {
+        return tauri::async_runtime::spawn_blocking(|| {
+            let root = root_dir();
+            let exe = find_server(&root).ok_or("llama-server not found")?;
+            let s = settings::Settings::load(&root.join("portable-data/config/llama-server.json"))?;
+            let evidence = runtime_capabilities::inspect(&exe, &settings::child_environment(&s)?)?;
+            serde_json::to_string_pretty(&evidence).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    if engine == "llamacpp" && action == "inventory" {
+        return tauri::async_runtime::spawn_blocking(|| {
+            serde_json::to_string_pretty(&gpu::inventory()?).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    if engine == "trtllm"
+        && [
+            "setup-check",
+            "install",
+            "install-status",
+            "install-cancel",
+            "install-wsl",
+            "open-ubuntu",
+        ]
+        .contains(&action.as_str())
+    {
+        return tauri::async_runtime::spawn_blocking(move || trt_setup::call(&root_dir(), &action))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if engine == "trtllm" && ["start", "stop"].contains(&action.as_str()) && trt_setup::running() {
+        return Err("Wait for TensorRT setup to finish before changing the service".into());
+    }
     let allowed = match engine.as_str() {
         "vllm" => ["start", "status", "stop", "logs"].contains(&action.as_str()),
         "trtllm" => ["installed", "start", "status", "stop", "logs"].contains(&action.as_str()),
         "bench" => ["installed", "install", "run"].contains(&action.as_str()),
         _ => false,
     };
-    if !allowed { return Err("Unsupported engine action".into()); }
+    if !allowed {
+        return Err("Unsupported engine action".into());
+    }
     let root = root_dir();
     let mut args = vec![engine, action.clone()];
     if action == "run" {
-        if args[0] != "bench" { return Err("Only llama-bench accepts a model".into()); }
+        if args[0] != "bench" {
+            return Err("Only llama-bench accepts a model".into());
+        }
         let name = model.ok_or("Choose a GGUF model first")?;
-        if name.is_empty() || name.contains('/') || name.contains('\\') || !name.to_ascii_lowercase().ends_with(".gguf") { return Err("Choose a model from portable-data/models".into()); }
-        let path = root.join("portable-data/models").join(&name);
-        if !path.is_file() { return Err(format!("Missing {}", path.display())); }
+        let path = fs::canonicalize(&name).map_err(|e| e.to_string())?;
+        if !local_files::model_files(&root)?
+            .iter()
+            .any(|allowed| fs::canonicalize(allowed).ok().as_ref() == Some(&path))
+        {
+            return Err("Choose a listed GGUF model".into());
+        }
         args.push(path.to_string_lossy().into_owned());
         if let Some(device) = device {
             if !device.is_empty() {
-                if !device.chars().all(|c| c.is_ascii_alphanumeric()) { return Err("Invalid device name".into()); }
+                if !device.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    return Err("Invalid device name".into());
+                }
                 args.push(device);
             }
         }
     }
     tauri::async_runtime::spawn_blocking(move || {
+        let _change = if matches!(args[0].as_str(), "vllm" | "trtllm")
+            && matches!(action.as_str(), "start" | "stop")
+        {
+            Some(
+                ENGINE_CHANGE
+                    .try_lock()
+                    .map_err(|_| "Wait for the current engine operation to finish")?,
+            )
+        } else {
+            None
+        };
         let mut command = Command::new(manager_exe()?);
         command.args(&args).env("LLAMA_WEBUI_ROOT", root);
         no_console(&mut command);
+        if args.first().map(String::as_str) == Some("trtllm") {
+            let seconds = if action == "start" { 660 } else { 45 };
+            let out = process_probe::capture(command, Duration::from_secs(seconds), 256 * 1024)?;
+            let text = format!("{}{}", out.stdout, out.stderr).trim().to_owned();
+            return if out.success { Ok(text) } else { Err(text) };
+        }
         let output = command.output().map_err(|e| e.to_string())?;
-        let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)).trim().to_string();
-        if output.status.success() { Ok(text) } else { Err(text) }
-    }).await.map_err(|e| e.to_string())?
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .trim()
+        .to_string();
+        if output.status.success() {
+            Ok(text)
+        } else {
+            Err(text)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 fn list_models(window: WebviewWindow) -> Result<Vec<String>, String> {
     require_dashboard(&window)?;
-    let dir = root_dir().join("portable-data/models");
-    let mut names = Vec::new();
-    if !dir.is_dir() { return Ok(names); }
-    for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if entry.file_type().map_err(|e| e.to_string())?.is_file() && entry.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("gguf")) {
-            names.push(entry.file_name().to_string_lossy().into_owned());
-        }
-    }
-    names.sort();
-    Ok(names)
+    Ok(local_files::model_files(&root_dir())?
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect())
+}
+
+#[tauri::command]
+async fn list_model_details(
+    window: WebviewWindow,
+) -> Result<Vec<local_files::ModelDetail>, String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| local_files::model_details(&root_dir()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn rescan_model_folders(window: WebviewWindow) -> Result<(), String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| {
+        let root = root_dir();
+        local_files::write_presets(&root, &local_files::load(&root)?)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn config_path(engine: &str) -> Result<PathBuf, String> {
     match engine {
-        "vllm" | "trtllm" => Ok(root_dir().join("portable-data/config").join(format!("{engine}.json"))),
+        "llamacpp" => Ok(root_dir().join("portable-data/config/llama-server.json")),
+        "vllm" | "trtllm" => Ok(root_dir()
+            .join("portable-data/config")
+            .join(format!("{engine}.json"))),
         _ => Err("Unsupported engine config".into()),
     }
 }
@@ -340,27 +566,103 @@ fn config_path(engine: &str) -> Result<PathBuf, String> {
 fn read_engine_config(window: WebviewWindow, engine: String) -> Result<serde_json::Value, String> {
     require_dashboard(&window)?;
     let path = config_path(&engine)?;
+    if engine == "llamacpp" {
+        return serde_json::to_value(settings::load_profile(&path)?).map_err(|e| e.to_string());
+    }
     let data = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     serde_json::from_slice(&data).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+fn write_engine_config(
+    path: &Path,
+    config: &serde_json::Value,
+    stop_previous: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if path.is_file() {
+        let previous: serde_json::Value =
+            serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if previous
+            .get("distro")
+            .and_then(|v| v.as_str())
+            .is_some_and(|distro| Some(distro) != config.get("distro").and_then(|v| v.as_str()))
+        {
+            stop_previous()?;
+        }
+    }
+    let bytes = serde_json::to_vec_pretty(config).map_err(|e| e.to_string())?;
+    fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 #[tauri::command]
-fn save_engine_config(window: WebviewWindow, engine: String, config: serde_json::Value) -> Result<(), String> {
+fn save_engine_config(
+    window: WebviewWindow,
+    engine: String,
+    config: serde_json::Value,
+) -> Result<(), String> {
     require_dashboard(&window)?;
     let path = config_path(&engine)?;
-    let str_field = |key: &str| config.get(key).and_then(|v| v.as_str()).unwrap_or("");
-    if ["distro", "executable", "model"].iter().any(|key| str_field(key).trim().is_empty()) { return Err("Distro, executable, and model are required".into()); }
-    let port = config.get("port").and_then(|v| v.as_u64()).unwrap_or(0);
-    if !(1..=65535).contains(&port) { return Err("Port must be 1 to 65535".into()); }
-    if !str_field("cuda_visible_devices").chars().all(|c| c.is_ascii_digit() || c == ',') { return Err("GPU IDs must be numbers separated by commas".into()); }
-    if engine == "vllm" {
-        let memory = config.get("gpu_memory_utilization").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let context = config.get("max_model_len").and_then(|v| v.as_u64()).unwrap_or(0);
-        if !(0.0 < memory && memory <= 1.0) || context == 0 { return Err("Invalid GPU memory fraction or context length".into()); }
-        if !str_field("cuda_home").is_empty() && !str_field("cuda_home").starts_with('/') { return Err("CUDA_HOME must be an absolute WSL path".into()); }
+    if engine == "trtllm" && trt_setup::running() {
+        return Err("Wait for TensorRT setup to finish before changing its settings".into());
     }
-    let bytes = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
-    fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    if engine == "llamacpp" {
+        let profile = settings::migrate_profile(config)?;
+        let revision = profile.revision;
+        settings::save_profile(&path, profile, revision)?;
+        return Ok(());
+    }
+    let _change = ENGINE_CHANGE
+        .try_lock()
+        .map_err(|_| "Wait for the current engine operation to finish")?;
+    let str_field = |key: &str| config.get(key).and_then(|v| v.as_str()).unwrap_or("");
+    if ["distro", "executable", "model"]
+        .iter()
+        .any(|key| str_field(key).trim().is_empty())
+    {
+        return Err("Distro, executable, and model are required".into());
+    }
+    let port = config.get("port").and_then(|v| v.as_u64()).unwrap_or(0);
+    if !(1..=65535).contains(&port) {
+        return Err("Port must be 1 to 65535".into());
+    }
+    if !str_field("cuda_visible_devices")
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == ',')
+    {
+        return Err("GPU IDs must be numbers separated by commas".into());
+    }
+    if engine == "vllm" {
+        let memory = config
+            .get("gpu_memory_utilization")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let context = config
+            .get("max_model_len")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        if !(0.0 < memory && memory <= 1.0) || context == 0 {
+            return Err("Invalid GPU memory fraction or context length".into());
+        }
+        if !str_field("cuda_home").is_empty() && !str_field("cuda_home").starts_with('/') {
+            return Err("CUDA_HOME must be an absolute WSL path".into());
+        }
+    }
+    write_engine_config(&path, &config, || {
+        let mut command = Command::new(manager_exe()?);
+        command
+            .args([&engine, "stop"])
+            .env("LLAMA_WEBUI_ROOT", root_dir());
+        no_console(&mut command);
+        let output = process_probe::capture(command, Duration::from_secs(45), 256 * 1024)?;
+        if output.success {
+            Ok(())
+        } else {
+            Err(format!(
+                "Could not stop the previous WSL service; settings were not changed: {}{}",
+                output.stdout, output.stderr
+            ))
+        }
+    })
 }
 
 #[tauri::command]
@@ -368,6 +670,88 @@ fn open_trt_guide(window: WebviewWindow) -> Result<(), String> {
     require_dashboard(&window)?;
     Command::new("explorer.exe")
         .arg("https://nvidia.github.io/TensorRT-LLM/installation/installation-guide.html")
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn window_action(window: WebviewWindow, action: String) -> Result<(), String> {
+    require_dashboard(&window)?;
+    match action.as_str() {
+        "drag" => window.start_dragging(),
+        "minimize" => window.minimize(),
+        "maximize" => {
+            if window.is_maximized().map_err(|e| e.to_string())? {
+                window.unmaximize()
+            } else {
+                window.maximize()
+            }
+        }
+        "close" => window.close(),
+        _ => return Err("Unsupported window action".into()),
+    }
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_app_paths(window: WebviewWindow) -> Result<local_files::AppPaths, String> {
+    require_dashboard(&window)?;
+    local_files::load(&root_dir())
+}
+
+#[tauri::command]
+fn save_app_paths(window: WebviewWindow, paths: local_files::AppPaths) -> Result<(), String> {
+    require_dashboard(&window)?;
+    local_files::save(&root_dir(), paths)
+}
+
+#[tauri::command]
+async fn pick_folders(window: WebviewWindow) -> Result<Vec<String>, String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .pick_folders()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
+    require_dashboard(&window)?;
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .pick_folder()
+            .map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_log_files(window: WebviewWindow) -> Result<Vec<local_files::LogFile>, String> {
+    require_dashboard(&window)?;
+    local_files::list_logs(&root_dir())
+}
+
+#[tauri::command]
+fn read_log_file(window: WebviewWindow, name: String) -> Result<String, String> {
+    require_dashboard(&window)?;
+    local_files::read_log(&root_dir(), &name)
+}
+
+#[tauri::command]
+fn open_logs_folder(window: WebviewWindow) -> Result<(), String> {
+    require_dashboard(&window)?;
+    let dir = local_files::logs_dir(&root_dir())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Command::new("explorer.exe")
+        .arg(&dir)
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -383,7 +767,34 @@ fn stop(app: &tauri::AppHandle) {
 fn main() {
     let app = tauri::Builder::default()
         .manage(Server(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![open_chat, manager_call, list_models, read_engine_config, save_engine_config, open_trt_guide])
+        .manage(benchmark::Shared::default())
+        .invoke_handler(tauri::generate_handler![
+            benchmark_inspect,
+            benchmark_control,
+            benchmark_run,
+            open_chat,
+            manager_call,
+            list_models,
+            list_model_details,
+            rescan_model_folders,
+            read_engine_config,
+            save_engine_config,
+            open_trt_guide,
+            window_action,
+            get_app_paths,
+            save_app_paths,
+            pick_folders,
+            pick_folder,
+            list_log_files,
+            read_log_file,
+            open_logs_folder
+        ])
+        .setup(|app| {
+            if let Some(main) = app.get_webview_window("main") {
+                start(main);
+            }
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("failed to build the llama.cpp WebUI shell");
 
@@ -392,4 +803,95 @@ fn main() {
             stop(handle);
         }
     });
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    #[test]
+    fn simultaneous_startup_retains_one_owned_child() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let server = Arc::new(Server(Mutex::new(None)));
+        let count = Arc::new(AtomicUsize::new(0));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let server = server.clone();
+                let count = count.clone();
+                std::thread::spawn(move || {
+                    server.ensure_started(0, || {
+                        count.fetch_add(1, Ordering::SeqCst);
+                        let mut command = if cfg!(windows) {
+                            let mut c = Command::new("powershell.exe");
+                            c.args([
+                                "-NoProfile",
+                                "-NonInteractive",
+                                "-Command",
+                                "Start-Sleep -Seconds 30",
+                            ]);
+                            c
+                        } else {
+                            let mut c = Command::new("sleep");
+                            c.arg("30");
+                            c
+                        };
+                        no_console(&mut command);
+                        command
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()
+                            .map_err(|e| e.to_string())
+                    })
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap().unwrap();
+        }
+        if let Some(mut child) = server.0.lock().unwrap().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+    #[test]
+    fn distro_change_stops_using_old_config_and_failure_preserves_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "router-config-review-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("vllm.json");
+        let old = serde_json::json!({"distro":"Old","model":"same"});
+        let new = serde_json::json!({"distro":"New","model":"same"});
+        fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+        let result = write_engine_config(&path, &new, || {
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
+                old
+            );
+            Err("cannot stop".into())
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
+            old
+        );
+        write_engine_config(&path, &new, || Ok(())).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
+            new
+        );
+        write_engine_config(&path, &new, || {
+            panic!("same distro must not stop the service")
+        })
+        .unwrap();
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
 }

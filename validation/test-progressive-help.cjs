@@ -1,0 +1,63 @@
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const {chromium} = require('../tools/ui/node_modules/playwright');
+const root=path.resolve(__dirname,'..');
+const html='<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/context-help.css"><style>body{margin:0;background:#101010;color:white;font:14px Segoe UI}main{margin:90px auto;width:700px}label{display:block;margin:18px 0}input,button{padding:10px;background:#222;color:white;border:1px solid #777}pre{height:150px;background:#222;padding:16px}.card{padding:20px;border:1px solid #444}#target{width:360px}#reading{margin-top:30px}</style></head><body><main><h1>Runtime settings</h1><section class="card" data-help-key="trtllm"><h2>Model configuration</h2><label data-help-key="cache_type_k">K cache type<input id="target" aria-label="K cache type" value="f16" aria-describedby="existing"><span id="existing">Current setting</span></label><label>Another setting<input id="other" aria-label="Other setting" value="unchanged"></label><button id="run">Run model</button><pre id="critical" data-help-protect>Model output and errors must stay readable.</pre></section><p id="reading">Read this text without opening help for the entire settings section.</p></main><script src="/context-help-catalog.js"></script><script src="/context-help.js"></script></body></html>';
+let browser;
+const server=http.createServer(async(req,res)=>{try{const name=req.url.split('?')[0];res.setHeader('Content-Type',name.endsWith('.js')?'application/javascript; charset=utf-8':name.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8');res.end(name==='/'?html:await fs.readFile(path.join(root,'tools/ui/static',path.basename(name))));}catch{res.statusCode=404;res.end();}});
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try {
+  browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(6000);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('http://127.0.0.1:'+server.address().port);
+  await page.locator('#target').hover();
+  const preview=page.locator('#router-help-preview');await preview.waitFor({state:'visible'});
+  assert.equal(await preview.getAttribute('data-depth'),'brief');
+  const first=await preview.boundingBox(), source=await page.locator('#target').boundingBox();
+  const intersects=(a,b)=>Math.max(0,Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x))*Math.max(0,Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y));
+  assert.equal(intersects(first,source),0,'Do not cover the source setting');
+  const compactLength=(await preview.locator('.router-help-panel-content').innerText()).length;
+  const font=await preview.locator('p').first().evaluate(el=>getComputedStyle(el).fontSize);
+  async function drag(locator,toX,toY){const b=await locator.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(toX,toY,{steps:14});await page.mouse.up();}
+  await drag(preview.getByRole('button',{name:'Move help panel'}),130,105);
+  assert.equal(await preview.getAttribute('data-pinned'),'true');
+  await page.locator('#other').click();await page.locator('#other').fill('edited');
+  assert.equal(await preview.isVisible(),true,'Moving pins help while using another control');
+  assert.match(await preview.innerText(),/K cache type/,'Pinned topic remains stable');
+  let moved=await preview.boundingBox();
+  // Move precisely to a known safe origin, then enlarge from the corner.
+  const grip=preview.getByRole('button',{name:'Move help panel'});const g=await grip.boundingBox();
+  await drag(grip,g.x+g.width/2+(60-moved.x),g.y+g.height/2+(70-moved.y));
+  moved=await preview.boundingBox();assert(Math.abs(moved.x-60)<2&&Math.abs(moved.y-70)<2,'Drag changes position');
+  await drag(preview.getByRole('button',{name:'Resize help to change explanation detail'}),moved.x+700-13,moved.y+580-13);
+  assert.equal(await preview.getAttribute('data-depth'),'full');
+  const fullLength=(await preview.locator('.router-help-panel-content').innerText()).length;
+  assert(fullLength>compactLength*4,'More space reveals substantially more context');
+  assert.match(await preview.innerText(),/What the KV cache remembers/);
+  assert.match(await preview.innerText(),/A practical comparison/);
+  assert.equal(await preview.locator('p').first().evaluate(el=>getComputedStyle(el).fontSize),font,'Resizing never scales type');
+  await preview.locator('.router-help-panel-content').evaluate(el=>el.scrollTop=150);
+  assert.equal(await preview.isVisible(),true,'Scrolling explanations does not dismiss help');
+  assert(await preview.locator('.router-help-panel-content').evaluate(el=>el.scrollTop)>0);
+  const enlarged=await preview.boundingBox();
+  await drag(preview.getByRole('button',{name:'Resize help to change explanation detail'}),enlarged.x+336-13,enlarged.y+224-13);
+  assert.equal(await preview.getAttribute('data-depth'),'brief','Shrinking restores a concise explanation');
+  assert.equal(await preview.locator('p').first().evaluate(el=>getComputedStyle(el).fontSize),font);
+  await page.setViewportSize({width:390,height:700});
+  const narrow=await preview.boundingBox();assert(narrow.x>=0&&narrow.x+narrow.width<=391&&narrow.y>=0&&narrow.y+narrow.height<=701,'Pinned help clamps to viewport');
+  await page.keyboard.press('Escape');assert.equal(await preview.isVisible(),false);
+  await page.setViewportSize({width:1440,height:1000});await page.locator('#reading').hover();await page.waitForTimeout(850);assert.equal(await preview.isVisible(),false,'Reading a section does not summon help');
+  await page.locator('#target').click();await page.locator('#target').fill('q8_0');await page.waitForTimeout(850);assert.equal(await preview.isVisible(),false,'Typing does not open an obstructive popup');
+  await page.keyboard.press('F1');assert.match(await page.locator('#router-help-document').innerText(),/What the KV cache remembers/);await page.keyboard.press('Escape');await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#target').getAttribute('aria-describedby'),'existing','Existing accessible descriptions survive');
+  await page.mouse.move(1,1);await page.locator('#target').focus();await page.keyboard.press('F1');await page.keyboard.press('Escape');
+  await page.screenshot({path:path.join(__dirname,'hover-help-compact.png')});
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors,[]);
+  console.log('PASS: source avoidance, compact default, drag/pin, stable topic, editing isolation, resize-driven context, fixed font, scrolling, shrink, viewport clamping, unobstructed reading/typing, F1, accessibility.');
+ }finally{if(browser)await browser.close();await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exitCode=1;});
