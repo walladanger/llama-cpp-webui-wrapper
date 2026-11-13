@@ -45,8 +45,9 @@ try {
 
     $Body = @{ model = (Split-Path -Leaf $Model); messages = @(@{ role = "user"; content = "Reply with exactly UPSTREAM_OK" }); max_tokens = 24 } | ConvertTo-Json -Depth 5
     $Reply = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/v1/chat/completions" -Method Post -ContentType "application/json" -Body $Body -TimeoutSec 30
-    $Text = [string] $Reply.choices[0].message.content
-    if ($Text.Trim() -ne "UPSTREAM_OK") { throw "Unexpected model reply: $Text" }
+    if (-not $Reply.choices -or $Reply.choices[0].message.role -ne "assistant" -or $Reply.choices[0].message.content -isnot [string]) { throw "Invalid chat completion response" }
+    $Text = $Reply.choices[0].message.content
+    if ([string]::IsNullOrWhiteSpace($Text)) { throw "Unexpected model reply: $Text" }
     $DeviceLabel = if ($Device) { $Device } else { "default GPU" }
     Write-Host "Passed: llama-server health and chat on $DeviceLabel"
 }

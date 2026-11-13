@@ -13,7 +13,13 @@ Install vLLM and a model in WSL2 separately. Edit `portable-data\config\vllm.jso
 .\llama-engine-manager.exe vllm stop
 ```
 
-The default API is `http://127.0.0.1:8000/v1`. The manager binds vLLM to WSL loopback and checks its health and served model from Windows. The service continues when the chat window closes.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:73b82c692b2a473fb181050fbe417d1df3053babe1adcdbeca5bde7abb579f37 -->
+
+The default API is `http://127.0.0.1:8000/v1`. The manager binds vLLM to WSL loopback and checks its health and served model from Windows. The service continues when the chat window closes. For both WSL engines, the manager leaves a foreground WSL process monitoring the systemd user unit. This keeps the distribution alive until the unit stops; no idle timeout setting is required. Changing the distro through Save settings first stops the service in the old distro. Other setting changes require a stop and restart.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The default 0.5B model verifies the connection. For coding work, use a stronger model. A Codex CLI custom provider needs `wire_api="responses"`, `base_url="http://127.0.0.1:8000/v1"`, and `requires_openai_auth=false`. Set `max_model_len` high enough for Codex's instructions. The manager defaults to vLLM's native sampler because FlashInfer's JIT sampler may need a matching CUDA compiler and headers in WSL2.
 

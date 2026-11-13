@@ -21,6 +21,7 @@ const SERVER_EXE: &str = if cfg!(windows) {
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct Server(Mutex<Option<Child>>);
+static ENGINE_OPERATIONS: Mutex<()> = Mutex::new(());
 
 pub fn no_console(cmd: &mut Command) {
     #[cfg(windows)]
@@ -172,12 +173,9 @@ fn start(window: WebviewWindow) {
     let url = format!("http://127.0.0.1:{port}");
 
     std::thread::spawn(move || {
-        let owned = app
-            .state::<Server>()
-            .0
-            .lock()
-            .unwrap()
-            .as_mut()
+        let server = app.state::<Server>();
+        let mut child_slot = server.0.lock().unwrap();
+        let owned = child_slot.as_mut()
             .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
         if healthy(port) && !owned {
             return show_status(
@@ -189,10 +187,11 @@ fn start(window: WebviewWindow) {
         if !healthy(port) {
             if !owned {
                 match spawn_server(&root, port) {
-                    Ok(child) => *app.state::<Server>().0.lock().unwrap() = Some(child),
+                    Ok(child) => *child_slot = Some(child),
                     Err(e) => return show_status(&window, &e, true),
                 }
             }
+            drop(child_slot);
             let log = root
                 .join("portable-data")
                 .join("logs")
@@ -304,6 +303,7 @@ async fn manager_call(window: WebviewWindow, engine: String, action: String, mod
         }
     }
     tauri::async_runtime::spawn_blocking(move || {
+        let _operation = ENGINE_OPERATIONS.lock().map_err(|e| e.to_string())?;
         let mut command = Command::new(manager_exe()?);
         command.args(&args).env("LLAMA_WEBUI_ROOT", root);
         no_console(&mut command);
@@ -358,6 +358,18 @@ fn save_engine_config(window: WebviewWindow, engine: String, config: serde_json:
         let context = config.get("max_model_len").and_then(|v| v.as_u64()).unwrap_or(0);
         if !(0.0 < memory && memory <= 1.0) || context == 0 { return Err("Invalid GPU memory fraction or context length".into()); }
         if !str_field("cuda_home").is_empty() && !str_field("cuda_home").starts_with('/') { return Err("CUDA_HOME must be an absolute WSL path".into()); }
+    }
+    let _operation = ENGINE_OPERATIONS.lock().map_err(|e| e.to_string())?;
+    let old: serde_json::Value = serde_json::from_slice(&fs::read(&path).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    if old.get("distro") != config.get("distro") {
+        let mut command = Command::new(manager_exe()?);
+        command.args([&engine, "stop"]).env("LLAMA_WEBUI_ROOT", root_dir());
+        no_console(&mut command);
+        let output = command.output().map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(format!("Could not stop service in old distro: {}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)));
+        }
     }
     let bytes = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
     fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))

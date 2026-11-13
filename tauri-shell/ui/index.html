@@ -104,7 +104,7 @@
     } catch (error) { display(`${engine}-output`, `Could not read settings: ${error}`); }
   }
   async function saveConfig(engine) {
-    if (!configs[engine]) return;
+    if (!configs[engine]) { await loadConfig(engine); if (!configs[engine]) return; }
     const config = { ...configs[engine] };
     for (const field of fields[engine]) {
       const node = $(`${engine}-${field}`);
@@ -117,6 +117,7 @@
     if (button) button.disabled = true;
     display(`${engine}-output`, `${action === 'start' ? 'Starting' : action === 'run' ? 'Benchmarking' : 'Running'}...`);
     try {
+      if (action === 'status') { await refreshEngine(engine); return; }
       const result = await invoke('manager_call', { engine, action, model: model || null, device: device || null });
       display(`${engine}-output`, result);
       if (action === 'start' || action === 'stop') await refreshEngine(engine);
@@ -139,7 +140,7 @@
       display(`${engine}-output`, status);
       const ready = status.includes('ActiveState=active') && status.includes('HTTP health: ready');
       const served = status.match(/^Running model: (.+)$/m)?.[1];
-      const mismatch = ready && served && configs[engine]?.model !== served;
+      const mismatch = ready && served && (engine === 'trtllm' && configs[engine]?.model.startsWith('/') ? configs[engine].model.replace(/\/+$/, '').split('/').pop() : configs[engine]?.model) !== served;
       badge(engine, mismatch ? 'Model differs' : ready ? 'Ready' : 'Stopped', mismatch ? 'missing' : ready ? 'ready' : '');
     } catch (error) { badge(engine, 'Unavailable', 'missing'); display(`${engine}-output`, String(error)); }
   }
@@ -153,6 +154,7 @@
     } catch (error) { display('bench-output', `Could not list models: ${error}`); }
   }
   async function refreshAll() {
+    await Promise.all(['vllm', 'trtllm'].filter(engine => !configs[engine]).map(loadConfig));
     await Promise.all([refreshEngine('vllm'), refreshEngine('trtllm'), refreshEngine('bench')]);
     $('notices').replaceChildren();
     if ($('vllm-badge').textContent === 'Model differs') notice('vLLM is running a different model than the saved setting. Update the model field or stop the service before starting it again.', 'Show settings', () => $('vllm-model').focus());

@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -114,7 +114,7 @@ fn wsl(cfg: &VllmConfig, args: &[&str]) -> Result<Output, String> {
     Command::new("wsl.exe")
         .arg("-d")
         .arg(&cfg.distro)
-        .arg("--")
+        .arg("--exec")
         .args(args)
         .output()
         .map_err(|e| format!("Cannot run wsl.exe: {e}"))
@@ -122,7 +122,7 @@ fn wsl(cfg: &VllmConfig, args: &[&str]) -> Result<Output, String> {
 
 fn wsl_distro(distro: &str, args: &[&str]) -> Result<Output, String> {
     Command::new("wsl.exe")
-        .args(["-d", distro, "--"])
+        .args(["-d", distro, "--exec"])
         .args(args)
         .output()
         .map_err(|e| format!("Cannot run WSL distro {distro}: {e}"))
@@ -184,7 +184,34 @@ fn trt_installed(cfg: &TrtllmConfig) -> Result<bool, String> {
 
 fn trt_active(cfg: &TrtllmConfig) -> Result<bool, String> {
     let result = wsl_distro(&cfg.distro, &["systemctl", "--user", "is-active", TRT_UNIT])?;
+    if !result.status.success() && result.status.code() != Some(3) {
+        return Err(output_text(&result));
+    }
     Ok(result.status.success() && String::from_utf8_lossy(&result.stdout).trim() == "active")
+}
+
+fn expected_model(model: &str) -> &str {
+    if model.starts_with('/') {
+        model.trim_end_matches('/').rsplit('/').next().unwrap_or(model)
+    } else {
+        model
+    }
+}
+
+fn keep_wsl_alive(distro: &str, unit: &str) -> Result<(), String> {
+    // A foreground Linux process keeps WSL alive after systemd-run returns.
+    let mut command = Command::new("wsl.exe");
+    command.args(["-d", distro, "--exec", "bash", "-lc",
+        "while state=$(systemctl --user show --property=ActiveState --value \"$1\"); do case \"$state\" in active|activating|reloading|deactivating) sleep 5;; *) exit;; esac; done",
+        "llama-webui-keepalive", unit]);
+    command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command.spawn().map_err(|e| format!("Cannot keep WSL distro {distro} alive: {e}"))?;
+    Ok(())
 }
 
 fn trt_start(cfg: &TrtllmConfig) -> Result<(), String> {
@@ -244,12 +271,13 @@ fn trt_start(cfg: &TrtllmConfig) -> Result<(), String> {
         }
         println!("{}", output_text(&result));
     }
+    keep_wsl_alive(&cfg.distro, TRT_UNIT)?;
     let started = Instant::now();
     while started.elapsed() < START_TIMEOUT {
         if healthy(cfg.port) {
             let served = running_model(cfg.port)
                 .ok_or("TensorRT-LLM health is ready but /v1/models is unavailable")?;
-            if served != cfg.model {
+            if served != expected_model(&cfg.model) {
                 return Err(format!(
                     "Running model {served} differs from configured model {}",
                     cfg.model
@@ -360,8 +388,8 @@ fn trt_logs(cfg: &TrtllmConfig) -> Result<(), String> {
 
 fn bench_exe(root: &Path) -> Option<PathBuf> {
     [
-        root.join("portable-data/bin/llama-bench.exe"),
         root.join("portable-data/bench/bin/llama-bench.exe"),
+        root.join("portable-data/bin/llama-bench.exe"),
     ]
     .into_iter()
     .find(|path| path.is_file())
@@ -445,6 +473,9 @@ fn output_text(output: &Output) -> String {
 
 fn active(cfg: &VllmConfig) -> Result<bool, String> {
     let result = wsl(cfg, &["systemctl", "--user", "is-active", UNIT])?;
+    if !result.status.success() && result.status.code() != Some(3) {
+        return Err(output_text(&result));
+    }
     Ok(result.status.success() && String::from_utf8_lossy(&result.stdout).trim() == "active")
 }
 
@@ -561,6 +592,7 @@ fn start(cfg: &VllmConfig) -> Result<(), String> {
         println!("{UNIT} is already active");
     }
 
+    keep_wsl_alive(&cfg.distro, UNIT)?;
     let started = Instant::now();
     while started.elapsed() < START_TIMEOUT {
         if healthy(cfg.port) {
